@@ -37,7 +37,7 @@ B) 这段代码里有没有**读取** cookie / session / token / Authorization �
 """
 
 
-def chunk(text: str, size: int = 300, overlap: int = 20, cap: int = 3):
+def chunk(text: str, size: int = 120, overlap: int = 20, cap: int = 8):
     lines = [l.rstrip() for l in text.splitlines() if l.strip()]
     if len(lines) <= size:
         return ["\n".join(lines)], True
@@ -58,7 +58,7 @@ def ask(block: str):
 
 def main() -> int:
     nfn = int(sys.argv[1]) if len(sys.argv) > 1 else 4
-    cap = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+    cap = int(sys.argv[2]) if len(sys.argv) > 2 else 8
 
     flow = json.load(io.open(FLOW, encoding="utf-8"))
     chains, order = {}, []
@@ -83,17 +83,19 @@ def main() -> int:
         chunks, covered = chunk(text, cap=cap)
         a = ck = 0
         ev = ""
+        ok = True
         for ch in chunks:
             try:
                 x, y, e = ask(ch)
             except Exception as ex:
                 print("      块失败:", str(ex)[:50])
+                ok = False
                 continue
             a, ck = a or x, ck or y
             ev = ev or e
         if a or ck:
             v = "AUTHENTICATED"
-        elif covered:
+        elif covered and ok:
             v = "UNAUTHENTICATED"
         else:
             v = "UNCLEAR"
