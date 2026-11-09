@@ -1,61 +1,170 @@
-# fwmap · 固件攻击面分诊工具
+# fwmap
 
-> 给它一个解包后的固件 rootfs，它告诉你：**先看哪个二进制**、**它处理哪些 URL**、
-> **有哪些源→汇的可疑链**，并用本地 LLM 逐条取证（每条结论引用真实代码行）。
+> 固件攻击面分诊工具：从一个**已解包的固件 rootfs** 出发，自动收敛到「先看哪个二进制、它处理哪些端点、哪些外部输入能流到危险函数」，并由本地大模型对每条线索逐条取证。
+>
+> 目标是降低人工阅读量，而不是自动判定漏洞。
+
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![LLM](https://img.shields.io/badge/LLM-local%20only-8A2BE2)](#设计取舍)
+[![Ghidra](https://img.shields.io/badge/backend-Ghidra%2012.x-orange)](https://ghidra-sre.org/)
 
 ---
 
-## 30 秒跑起来
+## 概述
 
-```powershell
-cd <你解压出来的目录>\fwmap-tool      # 例如 D:\tools\fwmap-tool
+嵌入式固件通常包含数百个可执行文件，人工逐个审计不现实。`fwmap` 采用四层收敛流程：
 
-# 第 1 步：只挑文件（几十秒，不需要 Ghidra）
-py -3.13 -m fwmap scan <rootfs目录> --top 10
+1. **按攻击面排序**，把上千个文件压缩到一两个目标；
+2. **建立端点与处理函数的映射**；
+3. **在反编译出的 C 代码上做语句级污点分析**，输出「源 → 汇」候选链；
+4. **调用本地 LLM 逐条取证**，由规则给出最终裁决。
 
-# 第 2 步：一条命令跑完四层，出 HTML 报告
-$env:PYTHONPATH="C:\deepseek\libs-bnb"      # 只有开 --agent 才需要
-py -3.13 -m fwmap triage <rootfs目录> -o out\myfw --agent
+全流程离线运行，不依赖任何在线 API。
+
+---
+
+## 核心特性
+
+- **分层收敛**：每一层都可以单独运行，越靠前的层越稳定，越靠后的层越依赖人工复核。
+- **证据可回溯**：每条链都带源、汇、中间语句与守卫代码，报告可直接定位到反编译行。
+- **模型只取证、不做裁决**：LLM 仅回答「危险调用前是否存在有效检查」，且必须以**语句下标**作答，证据文本由程序回填。裁决由规则计算，避免模型幻觉直接影响结论。
+- **多采样自洽**：同一线索采样 3 次，不一致即弃权（`UNPROVEN`）。
+- **零配置迁移**：Ghidra、模型、依赖均支持「环境变量 → 常见路径 → 包内相对路径」三级回退；`fwmap setup` 可自动安装 Ghidra 与 JDK。
+- **一键自检**：`fwmap doctor` 输出环境检查表。
+
+---
+
+## 工作流程
+
+```
+                固件 rootfs（已解包）
+                        │
+   ┌────────────────────┼────────────────────┐
+   │                    │                    │
+  M1 scan             M2 m2               M3 m3 --flow
+ 二进制排序        端点 → handler       源/汇提取 + 数据流
+ （无 Ghidra）      （Ghidra）           （Ghidra + 反编译）
+   │                    │                    │
+   └────────────────────┴────────────────────┘
+                        │
+                   Agent 复核
+              （本地 LLM 取证 + 规则裁决）
+                        │
+                   report.html
 ```
 
-报告：`out\myfw\report.html`（浏览器直接打开）。
-
-> 也可以用 `fwmap.cmd triage <rootfs> -o out\myfw --agent`。
-> 它会自己切到包所在目录、设好编码和 PYTHONPATH，**可以放在任何路径、从任何目录调用**。
+| 层 | 命令 | 输入 → 输出 | 依赖 | 典型耗时 |
+|---|---|---|---|---|
+| M1 | `scan` | rootfs → 二进制排名 | — | 数十秒 |
+| M2 | `m2` | 单个 ELF → 端点/处理函数表 | Ghidra | 1–2 分钟 |
+| M3 | `m3 --induce --flow` | 函数 → 源到汇的链 | Ghidra | 数分钟至数十分钟 |
+| 复核 | `agent` | 链 → 裁决 + 证据 | 本地模型 | 每条 20–75 秒 |
+| 汇总 | `triage` | rootfs → 完整 HTML 报告 | 以上全部 | 约 10–30 分钟 |
 
 ---
 
-## 四层各干什么
+## 快速开始
 
-| 层 | 命令 | 做什么 | 慢不慢 |
-|---|---|---|---|
-| M1 | `scan` | 上千个文件 → 按攻击面排序 | 几十秒 |
-| M2 | `m2` | 端点 → handler 映射 | 1~2 分钟 |
-| M3 | `m3 --induce --flow` | 源→汇数据流，出链 | 几分钟到半小时 |
-| 复核 | `agent` | 本地 LLM 逐条取证 + 规则裁决 | 每条 10~40 秒 |
+```bash
+# 1) 仅排序：不需要 Ghidra，几十秒出结果
+python -m fwmap scan <rootfs> --top 10
 
-`triage` 就是把上面四步串起来。
+# 2) 完整流程：四层 + 本地模型复核
+python -m fwmap triage <rootfs> -o out/myfw --agent
+
+# 报告
+out/myfw/report.html
+```
+
+首次使用建议先执行环境检查：
+
+```bash
+python -m fwmap setup --dry-run    # 查看将安装的组件与下载源
+python -m fwmap setup              # 安装 Ghidra + JDK（约 700 MB）
+python -m fwmap doctor --agent     # 环境自检
+```
+
+> **Windows 提示**：若 `python` 指向旧版本（例如 Anaconda 2.x），请改用 `py -3.13 -m fwmap`；
+> 也可直接使用 `fwmap.cmd`，它会自动切换工作目录并设置编码，可从任意路径调用。
+
+---
+
+## 输出示例
+
+报告包含四个部分：
+
+1. **二进制排序**：分数、角色、架构、体积、端点数量；
+2. **端点映射**：每个 URL 对应的处理函数与置信度；
+3. **LLM 复核**：每条链的裁决（`CONFIRMED` / `REFUTED` / `REVIEW` / `UNPROVEN`）、理由与引用代码；
+4. **边界说明**：工具自身的能力限制。
+
+示例报告见 [`examples/示例报告-DIR842.html`](examples/示例报告-DIR842.html)。
+
+---
+
+## 评测结果
+
+**二进制排序（M1）**：在 5 个未参与调参的固件上，人工认定的目标二进制全部进入前二，其中 4 次排名第一。
+
+**链级判定**：46 条人工标注链（跨 3 个厂商），3 次采样下：
+
+| 指标 | 数值 |
+|---|---|
+| 准确率 | 97% |
+| 精确率 | 97% |
+| 召回率 | 100% |
+| 弃权 | 4 条 |
+
+> 上述指标基于标注集，不代表真实环境中的绝对精度。`CONFIRMED` 仍需人工核对。
+
+**动态验证**：在 QEMU 中运行真实固件，复现 D-Link DIR-842 的栈溢出，返回地址完全受控（`pc = ra = 0x41414141`），对应 CVE-2020-8962。
+
+---
+
+## 设计取舍
+
+- **模型不作为裁决者。** LLM 的输出仅包含语句下标与分类标签，真值判定由 `agent/judge.py` 的规则完成。
+- **数据流基于反编译 C 代码，而非 P-code。** 精度略低，但证据可直接呈现给人工复核，符合工具定位。
+- **未知即未知。** 无法确定 handler 的端点标为 `low` 置信度，不做猜测；无法确认外部可控的源标为 `weak`。
 
 ---
 
 ## 环境要求
 
-| 东西 | 要求 | 说明 |
+| 组件 | 要求 | 说明 |
 |---|---|---|
-| Python | **3.10+**，本机用 `py -3.13` | 裸 `python` 若是 Anaconda 2.7 会直接崩 |
-| Ghidra | 12.x + JDK 21/25 | 默认找 `C:\deepseek\tools\ghidra_12.2_PUBLIC`；换机器用环境变量 `FWMAP_GHIDRA` 指定 |
-| 本地模型 | 可选，只在 `--agent` 时用 | 默认 Qwen2.5-Coder-7B-Instruct，4-bit 跑，5.6 GB 显存；换路径用 `FWMAP_LLM_MODEL` |
-| Python 依赖 | 仅 agent 需要 | 默认 `C:\deepseek\libs-bnb`（torch/transformers/bitsandbytes/accelerate）|
+| Python | 3.10+ | |
+| Ghidra | 12.x | 需 Java 25；`fwmap setup` 可自动安装 |
+| 本地模型 | 可选 | 默认 Qwen2.5-Coder-7B-Instruct（4-bit，约 5.6 GB 显存） |
 
-> **搬机器/换目录**：工具本身可以放在任何路径（`fwmap.cmd` 会自己定位）。
-> 只有三样是「外部资源」，路径写死时要改：Ghidra、模型、agent 依赖。
-> 前两个用环境变量覆盖，第三个是 `PYTHONPATH`。
+`Ghidra` 与本地模型仅在运行 M2/M3 与 `--agent` 时需要；`scan` 无任何外部依赖。
 
-**验证环境没坏**：
+---
 
-```powershell
-cd <你解压出来的目录>\fwmap-tool
-py -3.13 tests\test_endpoints.py      # 期望 11/11 passed
+## 路径与环境变量
+
+三类外部资源均按 **环境变量 → 常见安装位置 → 包内 `tools/`** 的顺序查找：
+
+| 资源 | 环境变量 |
+|---|---|
+| Ghidra | `FWMAP_GHIDRA` / `GHIDRA_HOME` / `GHIDRA_INSTALL_DIR` |
+| 本地模型 | `FWMAP_LLM_MODEL` |
+| Agent 依赖 | `FWMAP_AGENT_LIBS` |
+
+调优与排错：
+
+| 变量 | 默认 | 用途 |
+|---|---|---|
+| `FWMAP_GHIDRA_TIMEOUT` | 1800 | 单次 Ghidra 调用超时（秒） |
+| `FWMAP_M2_DIR` | `./fwmap-m2` | Ghidra 工程目录 |
+| `FWMAP_IDLE_TIMEOUT` | 60 | 下载空闲超时（秒） |
+| `FWMAP_GHIDRA_URL` / `FWMAP_JDK_URL` | — | 覆盖下载地址（内网/镜像环境） |
+
+网络受限时，可手动下载 Ghidra 后本地安装，不联网：
+
+```bash
+python -m fwmap setup --from /path/to/ghidra_12.2_PUBLIC_xxxx.zip
 ```
 
 ---
@@ -63,118 +172,71 @@ py -3.13 tests\test_endpoints.py      # 期望 11/11 passed
 ## 目录结构
 
 ```
-fwmap-tool\
-  fwmap\                Python 包（约 2900 行）
-    cli.py              命令行入口
-    triage.py           一条命令跑完四层 + HTML
-    scan.py             M1 挑文件
-    m2.py / m3.py       M2 端点、M3.1 源汇提取
-    m3flow.py           M3.2 数据流 + 规则（最核心）
-    agent\              LLM 取证 + 规则裁决
-    tests\              回归测试
-  ghidra_scripts\       Ghidra 脚本（M2/M3 必需）
-  examples\             示例报告
-  案例-负结果-Tenda19.html  实战案例：在饱和目标上做零日猎取
-  README.md             本文件
-  使用手册.md            详细用法、字段含义、常见坑
+fwmap-tool/
+├── fwmap/                  Python 包
+│   ├── cli.py              命令行入口
+│   ├── scan.py             M1 二进制排序
+│   ├── m2.py               M2 端点映射
+│   ├── m3.py               M3.1 源/汇提取与框架归纳
+│   ├── m3flow.py           M3.2 数据流分析（核心）
+│   ├── triage.py           四层串联与报告生成
+│   ├── setup.py            依赖安装
+│   ├── elf.py              ELF 解析（支持 sstrip）
+│   └── agent/              LLM 取证与规则裁决
+├── ghidra_scripts/         13 个 Ghidra 脚本
+├── tests/                  回归测试
+├── examples/               示例流程与报告
+├── 使用手册.md              详细用法
+├── 案例-负结果-Tenda19.html  实战案例
+└── README.md
 ```
 
 ---
 
-## 实战案例：一次完整的零日猎取（负结果）
+## 命令参考
 
-`案例-负结果-Tenda19.html`（浏览器打开）记录了对 **Tenda AC15 V15.03.05.19**
-—— 一个工具从未见过的构建 —— 的完整猎取过程：
-
-- 187 个 ELF → `httpd` 排第 1；184 个端点 → 142 个定位到 handler；
-  87 条候选链 → **保留 42 条，覆盖 25 个函数**。
-- 逐条人工复核 + NVD 双路检索（函数名 / 路由名）后：**24 个可达函数全部对应已公开 CVE**，
-  剩下 1 个用交叉引用证明是死代码。
-- 结论：**该攻击面已被 fuzz 饱和，此目标上不存在零日**。报告同时给出
-  4 个工具边界（等值约束、调试日志误判、可达性缺失、GoAhead 归纳失灵）。
-
-> 怎么判断"新不新"这个方法本身比结果重要：**函数名和路由名必须双路检索**。
-> 只按函数名查时 `formDLNAserver` 看起来无人报过；按路由名 `SetDlnaCfg` 一查，
-> 立刻命中 CVE-2024-10661，且版本号正是 `15.03.05.19`。
-
----
-
-## 它不能做什么（先看这段，省得到处踩）
-
-1. **不保证找到漏洞。** 它给的是"可疑链"，判断真假还得人看。
-2. **报告里的 `CONFIRMED` 不等于漏洞。** 它只表示"模型没看到保护、规则也放了行"。
-   实测里 `CONFIRMED` 有相当比例是假阳性（有界拷贝、白名单校验、变量重赋值）。
-3. **只处理 ELF。** PHP/lua 驱动的固件直接失明。
-4. **挑文件这一层最可靠。** 在 5 个没见过的固件上，目标二进制都排进了前二（4 次第一）。
-
-
----
-
-## 换一台机器 / 换个目录
-
-### 1) 先装依赖（Ghidra + JDK）
-
-```powershell
-py -3.13 -m fwmap setup --dry-run   # 先看它打算下什么、从哪下
-py -3.13 -m fwmap setup             # 真装（约 700 MB，装到 包目录\tools\）
-```
-
-- **下载源自动回退**：Ghidra 走 官方 GitHub → ghproxy.net → gh-proxy.com；JDK 走 清华 TUNA → Adoptium。
-- **装完自动改配置**：官方 zip 的 `support/launch.properties` 里写死了作者机器的绝对路径（JDK、settings、cache），
-  `setup` 会把这几行注释掉，运行时改用随包 JDK，换机器才能跑。
-- **网络不通时**：用浏览器/下载工具手动下好 zip，再 `py -3.13 -m fwmap setup --from D:\下载\ghidra_12.2_PUBLIC_xxxx.zip`
-  （这条完全不联网，秒级完成）。
-- 也可以只装一个：`--ghidra` 或 `--jdk`。
-
-### 2) 再自检
-
-**跑这一条**，它会告诉你缺什么：
-
-```powershell
-py -3.13 -m fwmap doctor --agent
-```
-
-输出形如：
-
-```
-Python      3.13.0  (...\python.exe)
-[OK]   包目录      D:\tools\fwmap-tool
-[OK]   汇词表      ...\fwmap\data\taint.txt
-[OK]   Ghidra      C:\tools\ghidra_12.2_PUBLIC
-[OK]   本地模型     C:\tools\models\Qwen2.5-Coder-7B-Instruct
-[OK]   accelerate  1.15.0
-```
-
-`Ghidra` 和 `本地模型` 这两行是 `[MISS]` 也不影响 `scan`（M1 只读 ELF 头，不需要它们）。
-
-**三样外部资源都是「环境变量 → 常见位置 → 包旁边」三级回退**，所以多数情况下不用配：
-
-| 资源 | 找的顺序 |
+| 命令 | 作用 |
 |---|---|
-| Ghidra | `FWMAP_GHIDRA` / `GHIDRA_HOME` → 常见安装位置 → 包旁边 `tools\ghidra*` → 盘符下 `ghidra*` |
-| 本地模型 | `FWMAP_LLM_MODEL` → 内置默认 → 包旁边 `tools\models\*Qwen*` → HuggingFace 缓存 |
-| agent 依赖 | `FWMAP_AGENT_LIBS` → `C:\deepseek\libs-bnb`（存在才用） |
+| `scan` | 二进制排序，生成攻击面地图 |
+| `m2` | 端点 → 处理函数映射 |
+| `m3` | 源/汇提取与数据流分析 |
+| `agent` | 对已有链运行 LLM 复核 |
+| `triage` | 串联四层，生成 HTML 报告 |
+| `check` | 校验 rootfs 解包完整性 |
+| `doctor` | 环境自检 |
+| `setup` | 安装 / 校验 Ghidra 与 JDK |
 
-找不到时手动指定：
+---
 
-```powershell
-$env:FWMAP_GHIDRA     = "D:\tools\ghidra_12.2_PUBLIC"
-$env:FWMAP_LLM_MODEL  = "D:\models\Qwen2.5-Coder-7B-Instruct"
-$env:FWMAP_AGENT_LIBS = "D:\pylibs\fwmap-deps"
-```
+## 已知限制
 
-## 其它环境变量（调优 / 排错用）
+1. **不保证发现漏洞。** 输出为待验证线索，最终判定需人工完成。
+2. **`CONFIRMED` 不等于漏洞。** 该结论仅表示模型未发现有效检查且规则放行；有界拷贝、白名单校验、变量重赋值等仍可能构成假阳性。
+3. **仅处理 ELF。** 由 PHP/Lua 驱动的固件无法分析。
+4. **端点可达性未闭环。** 未注册路由且无交叉引用的死代码仍可能出现在候选中。
+5. **框架归纳存在边界。** 当前归纳规则针对 Tenda/D-Link 一类写法；在 GoAhead 等框架上识别率显著下降。
 
-| 变量 | 默认 | 用途 |
-|---|---|---|
-| `FWMAP_GHIDRA_TIMEOUT` | 1800 | 单次 Ghidra 调用超时（秒）。大二进制跑超时就调大 |
-| `FWMAP_M2_DIR` | 当前目录下的 `fwmap-m2\` | Ghidra 工程放哪。放到 SSD 上可明显提速 |
+---
 
-```powershell
-$env:FWMAP_GHIDRA_TIMEOUT = "3600"
-$env:FWMAP_M2_DIR         = "D:\fwmap-m2"
-py -3.13 -m fwmap triage <rootfs> -o out\myfw --agent
-```
+## 案例研究
 
-超时报错里会附上 **Ghidra 自己最后几行输出**，据此判断是卡在导入、分析，还是工程锁。
-每个二进制用独立工程目录，上一次残留的锁不会卡住下一次；Ghidra 还用自己的私有临时目录，不依赖系统 `%TEMP%`。
+[`案例-负结果-Tenda19.html`](案例-负结果-Tenda19.html) 记录了对 Tenda AC15 V15.03.05.19 的完整分析过程：
+
+- 187 个 ELF → `httpd` 排名第一；184 个端点 → 142 个定位到处理函数；
+- 87 条候选链 → 保留 42 条，覆盖 25 个函数；
+- 逐条人工复核并做 NVD 双路检索（函数名 + 路由名）后，24 个可达函数均对应已公开的 CVE，剩余 1 个经交叉引用确认为死代码。
+
+结论：该攻击面已被充分研究，未发现新漏洞。报告同时总结了四类工具边界与判定方法。
+
+---
+
+## 文档
+
+- [使用手册.md](使用手册.md)：完整用法、字段含义、常见问题
+- [案例-负结果-Tenda19.html](案例-负结果-Tenda19.html)：实战分析记录
+
+---
+
+## License
+
+[MIT](LICENSE)
