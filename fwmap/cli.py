@@ -69,7 +69,7 @@ def cmd_triage(args) -> int:
 
     triage(args.rootfs, args.outdir, binaries=args.binaries, limit=args.limit,
            use_agent=args.agent, top_chains=args.top_chains, samples=args.samples,
-           force=args.force,
+           force=args.force, use_auth=not args.no_auth,
            log=log)
     return 0
 
@@ -166,6 +166,17 @@ def cmd_m3(args) -> int:
     return m3_main(argv)
 
 
+def cmd_auth(args) -> int:
+    from .auth import main as auth_main
+
+    argv = [args.binary, "--limit", str(args.limit)]
+    if args.input:
+        argv += ["-i", args.input]
+    if args.output:
+        argv += ["-o", args.output]
+    return auth_main(argv)
+
+
 def main(argv: list[str] | None = None) -> int:
     _setup_console()
     p = argparse.ArgumentParser(prog="fwmap", description="固件攻击面地图")
@@ -180,6 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     tri.add_argument("--top-chains", type=int, default=8, help="LLM 复核多少条链（默认 8）")
     tri.add_argument("--samples", type=int, default=3, help="每条链采样几次（默认 3）")
     tri.add_argument("--force", action="store_true", help="丢弃 profile 缓存，重新归纳")
+    tri.add_argument("--no-auth", action="store_true", help="跳过 M2.5 端点鉴权检查")
     tri.set_defaults(func=cmd_triage)
 
     s = sub.add_parser("scan", help="扫描已解包的 rootfs")
@@ -236,6 +248,13 @@ def main(argv: list[str] | None = None) -> int:
     m3.add_argument("--flow", action="store_true", help="跑 M3.2：数据流")
     m3.add_argument("--limit", type=int, default=40, help="数据流最多分析多少个函数（默认 40）")
     m3.set_defaults(func=cmd_m3)
+
+    au = sub.add_parser("auth", help="端点鉴权检查：handler 及调用者里有没有认证（需要 Ghidra）")
+    au.add_argument("binary", help="单个 ELF 文件")
+    au.add_argument("-i", "--input", help="已有 M2 JSON（跳过 M2）")
+    au.add_argument("-o", "--output", help="输出 JSON")
+    au.add_argument("--limit", type=int, default=0, help="最多检查多少个已定位 handler（默认全部）")
+    au.set_defaults(func=cmd_auth)
 
     args = p.parse_args(argv)
     return args.func(args)

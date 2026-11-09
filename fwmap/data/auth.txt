@@ -1,0 +1,46 @@
+# 鉴权证据词表：handler 或其调用者中出现即视为"有鉴权"。
+# 两类条目：
+#   func <名字>     已知鉴权函数，匹配 <名字>( 调用（词边界，避免子串误配）
+#   inline <正则>   内联会话检查模式（不区分大小写），如 cookie/session 标识解析
+#
+# 只回答"有没有鉴权证据"，不证明"鉴权实现是对的"。
+# 实现可绕过（弱比较、可预测 token）仍属人工复核范围。
+
+# ---- 常见鉴权/会话校验函数（GoAhead / D-Link / Tenda / 通用命名）
+func websSecurityHandler
+func check_auth
+func checkAuth
+func authCheck
+func auth_check
+func check_login
+func checkLogin
+func login_check
+func session_check
+func check_session
+func validate_session
+func verify_session
+func check_cookie
+func validate_cookie
+func is_logged_in
+func authenticate
+func do_auth
+func web_auth
+func http_auth
+func basic_auth
+func check_permission
+func check_privilege
+func check_user
+func verify_user
+func UserCheck
+
+# ---- 内联证据：函数自己解析会话标识，也算"有鉴权动作"
+inline HTTP_COOKIE
+inline \bstok\b
+inline sessionid
+inline session_id
+inline sess_id
+inline \bSESSID\b
+inline PHPSESSID
+inline \bauthenticated\b
+inline \bisLogin\b
+inline \bis_login\b

@@ -116,6 +116,22 @@ def _badge(v: str) -> str:
             f'border-radius:10px;font-size:12px;font-weight:600">{html.escape(v)}</span>')
 
 
+def _auth_cell(a: dict | None) -> str:
+    if not a:
+        return "<td>—</td>"
+    e = html.escape
+    tip = e(a.get("evidence") or a.get("reason", ""))
+    line = e((a.get("line") or "")[:120])
+    title = f"{tip} {line}".strip()
+    st = a.get("status")
+    if st == "protected":
+        return (f'<td title="{title}"><span style="color:#027a48">有鉴权</span>'
+                f'<span class="small"> {e(a.get("where", ""))}</span></td>')
+    if st == "unprotected":
+        return f'<td title="{title}"><b style="color:#b42318">未见鉴权</b></td>'
+    return f'<td title="{title}"><span class="small">unknown</span></td>'
+
+
 def render(res: dict) -> str:
     e = html.escape
     L = []
@@ -166,13 +182,32 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
         L.append(f"<div class='small'>M2 策略 <code>{e(b.get('m2_strategy', '-'))}</code>，"
                  f"端点 {len(eps)} 个"
                  f"{'（前 8 个）' if len(eps) > 8 else ''}</div>")
+        aus = b.get("auth_summary")
+        if aus:
+            L.append(f"<div class='small'>M2.5 鉴权：protected {aus['protected']} · "
+                     f"unprotected {aus['unprotected']} · unknown {aus['unknown']}"
+                     "（unprotected 是候选，不代表可利用）</div>")
+        if b.get("auth_error"):
+            L.append(f"<div class='warn'>鉴权检查失败：{e(b['auth_error'])}</div>")
         if eps:
-            L.append("<table><tr><th>端点</th><th>handler</th><th>置信</th></tr>")
+            has_auth = any("auth" in x for x in eps)
+            L.append("<table><tr><th>端点</th><th>handler</th><th>置信</th>"
+                     + ("<th>鉴权</th>" if has_auth else "") + "</tr>")
             for x in eps[:8]:
                 L.append(f"<tr><td class='mono'>{e(x['uri'])}</td>"
                          f"<td class='mono'>{e(x.get('handler') or '(未定位)')}</td>"
-                         f"<td>{e(x.get('confidence', ''))}</td></tr>")
+                         f"<td>{e(x.get('confidence', ''))}</td>"
+                         + (_auth_cell(x.get("auth")) if has_auth else "") + "</tr>")
             L.append("</table>")
+        # 未鉴权候选单独列出来：8 条截断的表格不能把它们埋掉
+        unprot = [x for x in eps if (x.get("auth") or {}).get("status") == "unprotected"]
+        if unprot:
+            L.append("<div class='warn'><b>未鉴权端点候选（需人工确认）：</b><br>"
+                     + "<br>".join(f"<span class='mono'>{e(x['uri'])}</span> "
+                                   f"<span class='small'>{e(x.get('handler_name') or '')}</span>"
+                                   for x in unprot[:10])
+                     + (f"<br>…共 {len(unprot)} 个，完整清单见 report.json" if len(unprot) > 10 else "")
+                     + "</div>")
         ch = b.get("chain_list") or []
         kept = [c for c in ch if c.get("verdict", "keep") == "keep"]
         sv = b.get("sink_verified") or 0
@@ -230,7 +265,9 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
     L.append("<h2>边界</h2><div class='warn'>"
              "① 分数只表示攻击面大小；② 链是“可疑”，不是“漏洞”；"
              "③ 引擎分不清“有界/无界”的所有写法，假阳性仍需人工核对；"
-             "④ 只处理 ELF，PHP/lua 驱动的固件直接失明。</div>")
+             "④ 只处理 ELF，PHP/lua 驱动的固件直接失明；"
+             "⑤ “有鉴权”只说明存在鉴权动作，不证明实现正确；"
+             "“未见鉴权”是候选，父级函数或前置代理鉴权无法完全排除。</div>")
     L.append("</div>")
     return "\n".join(L)
 
@@ -239,7 +276,7 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
 
 def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None,
            use_agent: bool = False, top_chains: int = 8, samples: int = 3,
-           force: bool = False, log=print) -> dict:
+           force: bool = False, use_auth: bool = True, log=print) -> dict:
     os.makedirs(outdir, exist_ok=True)
     t0 = time.time()
 
@@ -259,6 +296,16 @@ def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None
             b["m2_strategy"] = m2["strategy"]
             b["endpoints"] = len(m2["endpoints"])
             b["endpoint_list"] = m2["endpoints"]
+            if use_auth:
+                from .auth import analyze as auth_analyze
+                try:
+                    log("        M2.5 鉴权检查 …")
+                    a = auth_analyze(t.abs_path, m2=m2, log=log)
+                    b["endpoint_list"] = a["endpoints"]
+                    b["auth_summary"] = a["summary"]
+                except Exception as ex:                          # noqa: BLE001
+                    # 鉴权层失败不影响后面的 M3，报告里如实记一笔
+                    b["auth_error"] = str(ex)
         except Exception as ex:                              # noqa: BLE001
             b["error"] = f"M2 失败：{ex}"
             out["binaries"].append(b)
@@ -291,11 +338,15 @@ def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None
         rows.extend(b.get("agent_rows") or [])
     out["agent_rows"] = rows
     conf = sum(1 for r in rows if r["judge"]["verdict"] == "CONFIRMED")
+    unprot_total = sum((b.get("auth_summary") or {}).get("unprotected", 0)
+                       for b in out["binaries"])
     out["stats"] = {
         "oneline": (f"{len(cands)} 个二进制、{total_chains} 条候选链、保留 {total_kept} 条"
                     + (f"，LLM 复核 {len(rows)} 条里 {conf} 条 CONFIRMED" if rows else "")
+                    + (f"，未鉴权端点候选 {unprot_total} 个" if unprot_total else "")
                     + "。CONFIRMED 仍需人工核对后才能叫漏洞。"),
         "confirmed": conf, "kept": total_kept, "chains": total_chains,
+        "unprotected": unprot_total,
         "elapsed": round(time.time() - t0, 1),
     }
 
