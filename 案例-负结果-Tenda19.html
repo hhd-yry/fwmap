@@ -1,0 +1,206 @@
+<!doctype html><meta charset='utf-8'><title>fwmap 案例：饱和目标上的零日猎取</title>
+<style>
+body{font:14px/1.65 -apple-system,"Segoe UI",system-ui,sans-serif;margin:0;background:#f8f9fb;color:#101828}
+.wrap{max-width:1080px;margin:0 auto;padding:34px 24px 90px}
+h1{font-size:23px;margin:0 0 6px;letter-spacing:.2px}
+h2{font-size:17px;margin:36px 0 10px;padding-bottom:7px;border-bottom:1px solid #e4e7ec}
+h3{font-size:14px;margin:22px 0 8px;color:#344054}
+.sub{color:#667085;font-size:13px}
+table{border-collapse:collapse;width:100%;background:#fff;border:1px solid #e4e7ec;border-radius:8px;overflow:hidden;margin:10px 0}
+th{background:#f9fafb;text-align:left;font-weight:600;font-size:12px;color:#475467;padding:8px 10px;border-bottom:1px solid #e4e7ec}
+td{padding:7px 10px;border-bottom:1px solid #f2f4f7;vertical-align:top}
+tr:last-child td{border-bottom:0}
+code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
+pre{background:#0f172a;color:#e2e8f0;padding:13px 15px;border-radius:8px;overflow-x:auto;font-size:12.5px;line-height:1.55;margin:10px 0}
+pre .c{color:#94a3b8}
+pre .k{color:#93c5fd}
+pre .s{color:#86efac}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.note{background:#eff8ff;border-left:3px solid #2e90fa;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;color:#175cd3;margin:12px 0}
+.warn{background:#fffaeb;border-left:3px solid #f79009;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;color:#b54708;margin:12px 0}
+.ok{background:#ecfdf3;border-left:3px solid #12b76a;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;color:#027a48;margin:12px 0}
+.card{background:#fff;border:1px solid #e4e7ec;border-radius:8px;padding:14px 16px;margin:10px 0}
+.small{font-size:12.5px;color:#667085}
+.tag{display:inline-block;background:#eef2f6;color:#344054;border-radius:4px;padding:0 6px;font-size:11.5px;font-family:ui-monospace,Consolas,monospace}
+.tag.new{background:#fee4e2;color:#b42318}
+.tag.old{background:#eef2f6;color:#475467}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:12px 0}
+.kpi{background:#fff;border:1px solid #e4e7ec;border-radius:8px;padding:12px 14px}
+.kpi b{display:block;font-size:24px;line-height:1.2;color:#101828}
+.kpi span{font-size:12px;color:#667085}
+</style>
+<div class='wrap'>
+
+<h1>fwmap 案例：在一个已饱和的目标上做零日猎取</h1>
+<div class='sub'>Tenda AC15 V15.03.05.19 · 2026-11-08 · 结论：<b>未发现新漏洞（负结果）</b></div>
+
+<div class='card'>
+<b>一句话</b>：工具在这个从未见过的构建上排出 42 条候选链、覆盖 25 个函数；逐条人工复核并做公开库比对后，
+<b>24 个可达函数全部对应已公开 CVE</b>，剩余 1 个是不可达的死代码。
+这不是工具失败，而是目标已被 fuzz 饱和——报告的重点因此从「挖到了什么」转为
+<b>「如何证明一个目标已经没有零日可挖」</b>，以及这轮暴露出的 4 个工具边界。
+</div>
+
+<h2>1. 目标与流水线</h2>
+<table>
+<tr><th>项</th><th>值</th></tr>
+<tr><td>固件</td><td class='mono'>US_AC15V1.0BR_V15.03.05.19_multi_TD01.bin</td></tr>
+<tr><td>sha256</td><td class='mono'>e9d1b925…</td></tr>
+<tr><td>与调参样本关系</td><td>调参用的是 <span class='mono'>V15.03.1.16</span>（<span class='mono'>e2880dc6…</span>），<b>不同构建</b>，属于未见过的样本</td></tr>
+<tr><td>解包</td><td>671 个文件，rootfs <span class='mono'>fw/p3/tenda19</span></td></tr>
+</table>
+
+<div class='grid'>
+<div class='kpi'><b>187</b><span>M1 扫到的 ELF；httpd 排第 1（87 分）</span></div>
+<div class='kpi'><b>142/184</b><span>M2 定位到 handler 的端点</span></div>
+<div class='kpi'><b>42/87</b><span>M3 保留 / 候选链</span></div>
+<div class='kpi'><b>25</b><span>链分布的函数数（18 个为本轮新审）</span></div>
+</div>
+
+<table>
+<tr><th>层</th><th>做什么</th><th>这次的结果</th></tr>
+<tr><td>M1</td><td>二进制排序：攻击面有多大</td><td>187 个 ELF，<span class='mono'>bin/httpd</span> 第 1</td></tr>
+<tr><td>M2</td><td>端点 → handler 映射</td><td>184 端点，142 个定位（registration 策略）</td></tr>
+<tr><td>M3.1</td><td>函数级源/汇提取</td><td>783 函数，248 候选</td></tr>
+<tr><td>M3.2</td><td>反编译 C 上的语句级污点</td><td>87 链 → 保留 42（0 强 / 42 弱），降级 45</td></tr>
+</table>
+
+<div class='small'>保留链的类型分布：<span class='mono'>bof</span> 31 条、<span class='mono'>ci</span>（命令注入）9 条、<span class='mono'>fmt</span> 2 条。
+全部标为 <span class='mono'>weak</span>——因为源头是 <span class='mono'>websGetVar</span> 包装，参数确实来自请求，但是否可达取决于该 handler 是否要求登录，这一层工具判断不了。</div>
+
+<h2>2. 方法：怎么判定「新不新」</h2>
+<p>静态分析只能说明「有数据从请求流到危险函数」，不能说明「没人报过」。所以本轮把新颖性判定做成了独立的一步：</p>
+<table>
+<tr><th>#</th><th>做法</th><th>为什么必须这样</th></tr>
+<tr><td>1</td><td>NVD API 关键词检索 <span class='mono'>Tenda AC15</span>，取全量 106 条，抽取描述里的函数名建索引</td><td>先知道这个型号被报到什么程度</td></tr>
+<tr><td>2</td><td>对工具报出的每个函数，按<b>函数名</b>再查一次 NVD</td><td>有些 CVE 是用别的型号报的，同源代码</td></tr>
+<tr><td>3</td><td>对每个函数，按<b>路由名</b>再查一次（如 <span class='mono'>SetDlnaCfg</span>）</td><td><b>关键补漏</b>：有的公告只写路由不写函数名，第 2 步会漏掉</td></tr>
+<tr><td>4</td><td>对仍无命中的，回落到反编译人工判读（缓冲区大小、有无上界、有无 canary、是否可达）</td><td>公开库没有 ≠ 不是漏洞，必须自己看代码</td></tr>
+</table>
+
+<div class='warn'>
+<b>这一步踩过的坑（值得写进方法学）</b>：第一版索引只匹配描述里的小写 <span class='mono'>form*</span> / <span class='mono'>from*</span>，
+于是 <span class='mono'>formDLNAserver</span> 看起来「无人报过」。改用路由名 <span class='mono'>SetDlnaCfg</span> 一查，
+立刻命中 CVE-2024-10661，且描述里的版本号就是 <span class='mono'>15.03.05.19</span>。
+<b>函数名和路由名必须双路检索，否则会把复现误判成零日。</b>
+</div>
+
+<h2>3. 结果：25 个函数，24 个有主</h2>
+<table>
+<tr><th>函数</th><th>类型</th><th>公开编号</th></tr>
+<tr><td class='mono'>formWifiBasicSet</td><td>栈溢出 / 命令注入</td><td><span class='tag old'>CVE-2022-37175</span> <span class='tag old'>CVE-2018-16333</span></td></tr>
+<tr><td class='mono'>formSetIptv</td><td>栈溢出（list）</td><td><span class='tag old'>CVE-2021-44352</span></td></tr>
+<tr><td class='mono'>FUN_0007b8e4</td><td>cmdinput 栈溢出 + 命令注入</td><td><span class='tag old'>CVE-2025-10442</span> <span class='tag old'>CVE-2025-10443</span></td></tr>
+<tr><td class='mono'>formDLNAserver</td><td>栈溢出（scanList）</td><td><span class='tag old'>CVE-2024-10661</span>（同版本）</td></tr>
+<tr><td class='mono'>GetParentControlInfo</td><td>栈溢出（mac / src）</td><td><span class='tag old'>CVE-2025-25634</span>（同版本）</td></tr>
+<tr><td class='mono'>setSchedWifi</td><td>堆溢出（schedStartTime）</td><td><span class='tag old'>CVE-2022-40865</span></td></tr>
+<tr><td class='mono'>fromDhcpListClient</td><td>栈溢出（page / list*）</td><td><span class='tag old'>CVE-2022-40869</span> <span class='tag old'>CVE-2022-38326</span></td></tr>
+<tr><td class='mono'>fromAddressNat</td><td>栈溢出（entrys / page）</td><td><span class='tag old'>CVE-2022-40851</span></td></tr>
+<tr><td class='mono'>fromNatStaticSetting</td><td>栈溢出（page）</td><td><span class='tag old'>CVE-2022-40862</span></td></tr>
+<tr><td class='mono'>form_fast_setting_wifi_set</td><td>栈溢出（ssid / timeZone）</td><td><span class='tag old'>CVE-2022-40853</span> <span class='tag old'>CVE-2024-2813</span></td></tr>
+<tr><td class='mono'>fromSetSysTime</td><td>栈溢出（ntpServer / time）</td><td><span class='tag old'>CVE-2024-2855</span></td></tr>
+<tr><td class='mono'>formSetClientState</td><td>栈溢出（deviceId）</td><td><span class='tag old'>CVE-2022-46109</span></td></tr>
+<tr><td class='mono'>formSetDeviceName</td><td>栈溢出（devName）</td><td><span class='tag old'>CVE-2024-10662</span></td></tr>
+<tr><td class='mono'>formExpandDlnaFile</td><td>栈溢出（filePath）</td><td><span class='tag old'>CVE-2024-2807</span></td></tr>
+<tr><td class='mono'>formWifiWpsOOB / Start</td><td>栈溢出（index）</td><td><span class='tag old'>CVE-2024-2810</span> <span class='tag old'>CVE-2024-2811</span></td></tr>
+<tr><td class='mono'>formSetSpeedWan</td><td>栈溢出（speed_dir）</td><td><span class='tag old'>CVE-2024-2805</span></td></tr>
+<tr><td class='mono'>formWriteFacMac / SetSamba / UsbUnload / PPTPServer / WirelessRepeat / SetPPTPServer</td><td>溢出 / 命令注入</td><td><span class='tag old'>CVE-2024-2812</span> <span class='tag old'>CVE-2024-2851</span> <span class='tag old'>CVE-2020-10987</span> <span class='tag old'>CVE-2025-3786</span> …</td></tr>
+<tr><td class='mono'>fromSetWifiGusetBasic</td><td>栈溢出（shareSpeed）</td><td><span class='tag old'>CVE-2022-28969</span> 等 12 条（AX1806 / AC21 / AC23）</td></tr>
+<tr><td class='mono'>FUN_000a88a4</td><td>—</td><td><span class='tag new'>死代码（不可达）</span></td></tr>
+</table>
+
+<h2>4. 三个案例：工具在哪一步对、哪一步错</h2>
+
+<h3>4.1 精确命中：formDLNAserver（/goform/SetDlnaCfg）</h3>
+<div class='small'>工具报出「<span class='mono'>scanList</span> → <span class='mono'>sprintf</span>」，人工复核把边界算完整了：</div>
+<pre><span class='k'>char</span> acStack_116c [<span class='s'>4096</span>];
+local_28 = websGetVar(param_1, <span class='s'>"scanList"</span>, <span class='s'>""</span>);
+...
+local_2c = strtok(local_28, <span class='s'>"\t"</span>);              <span class='c'>// 制表符分隔</span>
+iVar1 = sprintf(acStack_116c + local_18, <span class='s'>"%s\n"</span>, local_2c);
+local_18 += iVar1;                                  <span class='c'>// 无任何上界检查</span>
+<span class='k'>while</span> ((local_2c = strtok(<span class='k'>NULL</span>, <span class='s'>"\t"</span>))) {           <span class='c'>// 还能继续喂</span>
+    iVar1 = sprintf(acStack_116c + local_18, <span class='s'>"%s\n"</span>, local_2c);
+    local_18 += iVar1;
+}
+fwrite(acStack_116c, local_18, <span class='s'>1</span>, local_1c);        <span class='c'>// 越界长度也照样写</span></pre>
+<table>
+<tr><th>这轮从二进制里算出来的事实</th><th>依据</th></tr>
+<tr><td>缓冲区 4096，每条 <span class='mono'>token + "\n"</span></td><td>反编译 + 定位 <span class='mono'>.rodata</span> 里的 <span class='mono'>"%s\n"</span> 与 <span class='mono'>"\t"</span></td></tr>
+<tr><td>约 4100 字节的 <span class='mono'>scanList</span> 即可越界</td><td>累加偏移无比较</td></tr>
+<tr><td><b>未开栈保护</b>，溢出可直达保存的 LR</td><td>二进制中无 <span class='mono'>__stack_chk_fail</span>、无 <span class='mono'>stack smashing</span></td></tr>
+<tr><td>附带<b>越界读</b>：栈内容被写进 <span class='mono'>dlna.db</span></td><td><span class='mono'>fwrite</span> 用溢出后的 <span class='mono'>local_18</span> 当长度</td></tr>
+</table>
+<div class='note'>公告（CVE-2024-10661）只写了缓冲溢出；<b>「同一根因顺带泄露栈内存」这一点是我们自己补的</b>。
+这是负结果报告里唯一可算作增量观察的东西，但它不是独立漏洞。</div>
+
+<h3>4.2 被 M2 拦下的假线索：FUN_000a88a4 是死代码</h3>
+<pre>doSystemCmd(<span class='s'>"behavior_manager %s --%s /etc/chengyanconfig/dem"</span>,
+            modulename, option);      <span class='c'>// 两个 HTTP 参数零过滤拼进 shell</span></pre>
+<div class='small'>只看 M3，这是标准的命令注入。但：</div>
+<table>
+<tr><th>检查</th><th>结果</th></tr>
+<tr><td>M2 的 142 条 route→handler 里有它吗</td><td>没有</td></tr>
+<tr><td>Ghidra <span class='mono'>ListCallers</span> 查调用者</td><td>无调用者</td></tr>
+<tr><td>数据引用（函数指针表）</td><td>无引用</td></tr>
+</table>
+<div class='ok'><b>结论：死代码。</b>这是分层设计价值最直接的证据——M2 的端点表能把 M3 的函数级误报按下去。</div>
+
+<h3>4.3 规则看不穿的假阳性：等值约束</h3>
+<pre>sprintf((<span class='k'>char</span> *)&amp;local_74, <span class='s'>"%s.switch"</span>, modulename);   <span class='c'>// 目标只有 ~48 字节</span></pre>
+<div class='small'>但进入该分支的前提是：</div>
+<pre><span class='k'>if</span> ((strcmp(modulename, <span class='s'>"accountfilter"</span>) == 0 ||
+     strcmp(modulename, <span class='s'>"qosrule"</span>) == 0) &amp;&amp; ...)</pre>
+<div class='small'>长度已被 <span class='mono'>strcmp</span> 钉死在 13 字符内 → <b>不是漏洞</b>。
+这类「等值比较即长度约束」的守卫，语句级污点规则看不出来。</div>
+
+<h2>5. 这轮暴露的 4 个工具边界</h2>
+<table>
+<tr><th>#</th><th>边界</th><th>证据</th><th>修法</th></tr>
+<tr><td>1</td><td><b>归纳规则绑死在 Tenda httpd 的写法上</b></td>
+<td>换到同机 <span class='mono'>bin/dhttpd</span>（GoAhead 3.x）：492 函数、24 个有源有汇，却只出 1 条链、<b>保留 0</b>。归纳把 <span class='mono'>error()</span> / <span class='mono'>assert()</span> 当成源——源参数是 <span class='mono'>wp-&gt;putname &amp;&amp; wp-&gt;filename</span>、<span class='mono'>0 &lt;= size &amp;&amp; size &lt; bp-&gt;buflen</span> 这种断言表达式；真正的 <span class='mono'>websGetVar</span> 反而没识别</td>
+<td>源归纳加「参数是否像变量名 / 是否像断言」判别；补 GoAhead 档案</td></tr>
+<tr><td>2</td><td><b>等值约束看不穿</b></td><td>§4.3</td><td>把 <span class='mono'>strcmp(x,"literal")==0</span> 作为长度上界写进守卫模型</td></tr>
+<tr><td>3</td><td><b>调试日志被当格式化字符串</b></td><td>2 条 <span class='mono'>fmt</span> 链全是 <span class='mono'>printf(常量格式, 用户实参)</span>，且包在 <span class='mono'>cgi_debug=="on"</span> 里</td><td><span class='mono'>fmt</span> 判定要求首参被污染，否则不算</td></tr>
+<tr><td>4</td><td><b>缺端点可达性判定</b></td><td>§4.2 的死代码会污染结果</td><td>把 M2 的 route→handler 反查进 M3 verdict：未注册且无 xref → <span class='mono'>unreachable</span></td></tr>
+</table>
+
+<h2>6. 为什么这个负结果是可信的</h2>
+<ul>
+<li>NVD 中可检索到 <b>106 条</b>与 Tenda AC15 相关的 CVE，其中大量直接写死 <span class='mono'>V15.03.05.19</span>，时间跨度 2018–2026。</li>
+<li>同源代码复用在 AC6 / AC9 / AC10 / AC18 / AX3 / AX1806 / AC21 / AC23 上：任何一个函数被谁报过，基本都会覆盖到这里。</li>
+<li>工具报出的 24 个可达函数，用<b>函数名 + 路由名双路检索</b>后全部有主；唯一没有主的，用交叉引用证明为不可达。</li>
+<li>因此结论不是「工具没找到」，而是「<b>这个攻击面已经被 fuzz 饱和</b>」——工具在这里只能高效复现。</li>
+</ul>
+
+<div class='warn'>
+<b>负结果的边界</b>：本轮只覆盖了 <span class='mono'>bin/httpd</span> 一个二进制、以及 M3 实际分析到的 783 个函数。
+同一固件里 <span class='mono'>minidlna</span>、<span class='mono'>dhttpd</span>、<span class='mono'>app_data_center</span> 未展开，
+不能据此宣称「整个固件没有零日」。
+</div>
+
+<h2>7. 下一步该往哪打</h2>
+<table>
+<tr><th>目标</th><th>理由</th><th>风险</th></tr>
+<tr><td class='mono'>bin/minidlna</td><td>NVD 检索 "Tenda minidlna" = <b>0 条</b>；第三方代码被 Tenda 改过</td><td>上游 minidlna 自身有 CVE</td></tr>
+<tr><td class='mono'>bin/dhttpd</td><td>NVD 的 "dhttpd" 命中的是 D-Link 同名软件，与 Tenda 无关</td><td>要先修 §5 第 1 条，否则跑不出东西</td></tr>
+<tr><td class='mono'>usr/bin/app_data_center</td><td>只有 2017 年两条，之后无人更新</td><td>老洞仍在 → 属复现</td></tr>
+</table>
+
+<h2>8. 复现材料</h2>
+<table>
+<tr><th>文件</th><th>内容</th></tr>
+<tr><td class='mono'>demo/tenda19_m3.flow.json</td><td>87 链 / 42 保留</td></tr>
+<tr><td class='mono'>demo/tenda19_m2.json</td><td>184 端点 / 142 定位</td></tr>
+<tr><td class='mono'>demo/t19_batch1.c</td><td><span class='mono'>websGetVar</span> 包装、6 个 strcpy 候选反编译</td></tr>
+<tr><td class='mono'>demo/t19_batch2.c</td><td><span class='mono'>formDLNAserver</span>、<span class='mono'>fromSetWifiGusetBasic</span>、<span class='mono'>FUN_000a88a4</span></td></tr>
+<tr><td class='mono'>demo/nvd_ac15.json</td><td>NVD 全量 106 条 AC15 CVE</td></tr>
+<tr><td class='mono'>demo/dhttpd_m3.json</td><td>GoAhead 归纳失败的原始记录</td></tr>
+</table>
+
+<div class='small' style='margin-top:26px;border-top:1px solid #e4e7ec;padding-top:12px'>
+动态验证（qemu）本轮未做：Tenda httpd 是 ARM，启动依赖 <span class='mono'>cfm</span> / nvram；
+DLNA 那条的越界条件已在静态层面算清（4096 / <span class='mono'>"%s\n"</span> / 无 canary）。
+</div>
+
+</div>

@@ -1,0 +1,309 @@
+"""fwmap triage：一条命令跑完四层（挑文件 → 端点 → 出链 → LLM 复核），出一份 HTML。
+
+用法：
+    py -m fwmap triage <rootfs> -o out/ [--binaries 2] [--limit N] [--agent]
+
+设计取舍：
+  - M3 很慢（Ghidra），所以默认只对**前 2 个**二进制跑，且 profile 会缓存到
+    <binary>.taint.txt，第二次跑同一个固件直接复用。
+  - 任何一层失败都不中断：HTML 里如实记「这一层没跑/失败了」，而不是假装没有漏洞。
+"""
+
+from __future__ import annotations
+
+import html
+import json
+import os
+import time
+
+from .m2 import extract as m2_extract
+from .m3 import extract as m3_extract
+from .m3 import induce, induce_sinks
+from .m3flow import _load_catalog, normalize_weak, run_flow
+from .m3 import catalog_path
+from .scan import scan
+
+
+# ---------------------------------------------------------------- 每层
+
+def _profile_for(binary: str, force: bool = False) -> str:
+    """归纳出 profile（带缓存）。阈值按大小自适应，见 m3.py 里的说明。"""
+    prof = os.path.splitext(binary)[0] + ".taint.txt"
+    if os.path.exists(prof) and not force:
+        return prof
+    size_kb = os.path.getsize(binary) // 1024
+    mc, md = (3, 2) if size_kb < 512 else (5, 3)
+    rows = induce(binary, min_calls=mc, min_distinct=md)
+    sink_rows = []
+    try:
+        sink_rows = induce_sinks(binary)
+    except Exception:                                       # noqa: BLE001
+        pass
+    with open(prof, "w", encoding="utf-8") as fh:
+        fh.write("# 由 InduceSources / InduceSinks 归纳，人工复核后再当 source/sink 用\n")
+        for r in rows:
+            sample = r["strings"] or []
+            dotted = sum(1 for s in sample if "." in s)
+            kind = "source-weak" if sample and dotted > len(sample) / 2 else "source-induced"
+            fh.write(f"{kind} {r['api']}\n")
+        for r in sink_rows:
+            fh.write(f"sink-ci-induced {r['api']}\n")
+    return prof
+
+
+def _m3(binary: str, limit: int, force: bool = False) -> dict:
+    prof = _profile_for(binary, force=force)
+    r = m3_extract(binary, profile=prof)
+    _s, _k, weak = _load_catalog(catalog_path())
+    if os.path.exists(prof):
+        _s2, _k2, _w2 = _load_catalog(prof)
+        weak.update(_w2)
+    normalize_weak(r["functions"], weak)
+    pool = list(r["candidates"]) + [
+        fn for fn in r["functions"]
+        if fn["sources"] and not fn["sinks"]
+        and any(not s["weak"] for s in fn["sources"])
+    ]
+    flow = run_flow(binary, pool, profile=prof, limit=limit)
+    return {"summary": r["summary"], "chains": flow["chains"],
+            "decompiled": flow["decompiled"], "sink_verified": flow.get("sink_verified", 0)}
+
+
+def _agent(binary: str, chains: list[dict], top: int, samples: int) -> list[dict]:
+    from .agent import cli as agent_cli
+    from .agent import extract as ex
+    from .agent import judge as jd
+    from .m3flow import decompile, _body, _normalize, _statements
+    from .m2 import find_ghidra
+
+    picks = agent_cli._pick_chains({"chains": chains}, top)
+    if not picks:
+        return []
+    addrs = sorted({c["address"] for c in picks if c.get("address")})
+    helpers = sorted({c["helper"] for c in picks if c.get("helper")})
+    blocks = decompile(find_ghidra(), binary, addrs + helpers)
+    out = []
+    for c in picks:
+        text = blocks.get(c["helper"]) if c.get("helper") else None
+        text = text or blocks.get(c["function"])
+        if not text:
+            out.append({"chain": c, "facts": None, "evidence": {},
+                        "judge": {"verdict": jd.UNPROVEN, "confidence": "none",
+                                  "reason": "反编译失败"}})
+            continue
+        stmts = [" ".join(s.split()) for s in _statements(_body(_normalize(text)))]
+        res = ex.extract(c, stmts, samples=samples)
+        out.append({"chain": c, "facts": res.get("facts"),
+                    "evidence": res.get("evidence"),
+                    "agreement": res.get("agreement"),
+                    "judge": jd.judge(c, res)})
+    return out
+
+
+# ---------------------------------------------------------------- 渲染
+
+BADGE = {
+    "CONFIRMED": ("#b42318", "#fee4e2"),
+    "REVIEW": ("#b54708", "#fef0c7"),
+    "REFUTED": ("#475467", "#f2f4f7"),
+    "UNPROVEN": ("#475467", "#f9fafb"),
+}
+
+
+def _badge(v: str) -> str:
+    fg, bg = BADGE.get(v, ("#344054", "#f2f4f7"))
+    return (f'<span style="color:{fg};background:{bg};padding:1px 8px;'
+            f'border-radius:10px;font-size:12px;font-weight:600">{html.escape(v)}</span>')
+
+
+def render(res: dict) -> str:
+    e = html.escape
+    L = []
+    L.append("<!doctype html><meta charset='utf-8'><title>fwmap triage</title>")
+    L.append("""<style>
+body{font:14px/1.6 -apple-system,"Segoe UI",system-ui,sans-serif;margin:0;background:#f8f9fb;color:#101828}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 22px 80px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:34px 0 10px;padding-bottom:6px;border-bottom:1px solid #e4e7ec}
+.sub{color:#667085;font-size:13px}
+table{border-collapse:collapse;width:100%;background:#fff;border:1px solid #e4e7ec;border-radius:8px;overflow:hidden}
+th{background:#f9fafb;text-align:left;font-weight:600;font-size:12px;color:#475467;padding:8px 10px;border-bottom:1px solid #e4e7ec}
+td{padding:7px 10px;border-bottom:1px solid #f2f4f7;vertical-align:top}
+tr:last-child td{border-bottom:0}
+code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.note{background:#eff8ff;border-left:3px solid #2e90fa;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;color:#175cd3}
+.warn{background:#fffaeb;border-left:3px solid #f79009;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;color:#b54708}
+.card{background:#fff;border:1px solid #e4e7ec;border-radius:8px;padding:14px 16px;margin:10px 0}
+.small{font-size:12.5px;color:#667085}
+</style>""")
+    L.append("<div class='wrap'>")
+    L.append(f"<h1>fwmap triage · {e(os.path.basename(res['rootfs']))}</h1>")
+    L.append(f"<div class='sub'>{e(res['rootfs'])} · 生成于 {e(res['time'])}"
+             f"{' · LLM 复核已开' if res.get('agent') else ' · 未开 LLM 复核'}</div>")
+
+    st = res["stats"]
+    L.append("<div class='card'><b>一句话</b>：" + e(st["oneline"]) + "</div>")
+
+    # 第一层
+    L.append("<h2>① 该先看哪些文件（M1）</h2>")
+    L.append("<table><tr><th>#</th><th>分数</th><th>角色</th><th>架构</th><th>大小</th>"
+             "<th>路径</th><th>端点</th><th>链</th></tr>")
+    for i, b in enumerate(res["binaries"], 1):
+        L.append(f"<tr><td>{i}</td><td><b>{b['score']}</b></td><td>{e(b['role'])}</td>"
+                 f"<td>{e(b['arch'])}</td><td>{b['size']//1024}K</td>"
+                 f"<td class='mono'>{e(b['path'])}</td>"
+                 f"<td>{b.get('endpoints', '-')}</td><td>{b.get('chains', '-')}</td></tr>")
+    L.append("</table>")
+    L.append("<div class='small' style='margin-top:6px'>分数只表示“攻击面有多大”，不是“有没有漏洞”。</div>")
+
+    # 每个二进制
+    for b in res["binaries"]:
+        L.append(f"<h2>② {e(b['path'])}</h2>")
+        if b.get("error"):
+            L.append(f"<div class='warn'>这一层失败：{e(b['error'])}</div>")
+            continue
+        eps = b.get("endpoint_list") or []
+        L.append(f"<div class='small'>M2 策略 <code>{e(b.get('m2_strategy', '-'))}</code>，"
+                 f"端点 {len(eps)} 个"
+                 f"{'（前 8 个）' if len(eps) > 8 else ''}</div>")
+        if eps:
+            L.append("<table><tr><th>端点</th><th>handler</th><th>置信</th></tr>")
+            for x in eps[:8]:
+                L.append(f"<tr><td class='mono'>{e(x['uri'])}</td>"
+                         f"<td class='mono'>{e(x.get('handler') or '(未定位)')}</td>"
+                         f"<td>{e(x.get('confidence', ''))}</td></tr>")
+            L.append("</table>")
+        ch = b.get("chain_list") or []
+        kept = [c for c in ch if c.get("verdict", "keep") == "keep"]
+        sv = b.get("sink_verified") or 0
+        L.append(f"<div class='small' style='margin-top:10px'>M3：找到 {len(ch)} 条链，"
+                 f"保留 <b>{len(kept)}</b> 条"
+                 + (f"，其中 {sv} 条诱导汇做过“形参到没到 system”的确认" if sv else "")
+                 + "。</div>")
+        if kept:
+            L.append("<table><tr><th>函数</th><th>源</th><th>汇</th><th>跳</th><th>说明</th></tr>")
+            for c in kept[:15]:
+                flags = []
+                if c.get("weak"):
+                    flags.append("弱源")
+                if c.get("induced_source"):
+                    flags.append("诱导源")
+                if c.get("induced_sink"):
+                    flags.append("诱导汇")
+                L.append(f"<tr><td class='mono'>{e(c['function'])}</td>"
+                         f"<td class='mono'>{e(c['source_api'])}({e(c.get('source_param') or '')})</td>"
+                         f"<td class='mono'>{e(c['sink'])}<span class='small'> [{e(c.get('sink_category',''))}]</span></td>"
+                         f"<td>{c.get('hops',1)}</td>"
+                         f"<td class='small'>{e('、'.join(flags)) or '—'}</td></tr>")
+            L.append("</table>")
+
+    # 第四层
+    if res.get("agent") and not res.get("agent_rows"):
+        L.append("<h2>③ LLM 复核</h2>")
+        errs = [b.get("agent_error") for b in res.get("binaries", []) if b.get("agent_error")]
+        if errs:
+            L.append("<div class='warn'><b>LLM 复核失败，本节没有结果。</b><br>"
+                     f"<span class='mono'>{e('; '.join(errs)[:400])}</span><br>"
+                     "常见原因：缺少 agent 依赖（accelerate / bitsandbytes）。"
+                     "请先设 <span class='mono'>PYTHONPATH=C:\\deepseek\\libs-bnb</span> 再重跑。</div>")
+        else:
+            L.append("<div class='warn'>LLM 复核没有产出（没有可复核的候选链）。</div>")
+    elif res.get("agent") and res.get("agent_rows"):
+        L.append("<h2>③ LLM 复核</h2>")
+        L.append("<div class='note'>LLM 只回答“危险调用前有没有真正的保护”，"
+                 "并且必须引用语句编号（证据由我们取回，模型编不了）。裁决由规则给出。</div>")
+        for r in res["agent_rows"]:
+            c, j = r["chain"], r["judge"]
+            L.append("<div class='card'>")
+            L.append(f"<div>{_badge(j['verdict'])} "
+                     f"<b class='mono'>{e(c['function'])}</b> "
+                     f"<span class='mono'>{e(c['source_api'])}({e(c.get('source_param') or '')}) → {e(c['sink'])}</span></div>")
+            L.append(f"<div style='margin-top:6px'>{e(j['reason'])}</div>")
+            ev = r.get("evidence") or {}
+            if ev.get("check"):
+                L.append(f"<div class='small mono' style='margin-top:6px;background:#f9fafb;padding:6px 8px;"
+                         f"border-radius:4px'>{e(ev['check'][:200])}</div>")
+            L.append(f"<div class='small mono' style='margin-top:4px'>危险调用："
+                     f"{e((c.get('sink_args') or '')[:160])}</div>")
+            L.append("</div>")
+
+    L.append("<h2>边界</h2><div class='warn'>"
+             "① 分数只表示攻击面大小；② 链是“可疑”，不是“漏洞”；"
+             "③ 引擎分不清“有界/无界”的所有写法，假阳性仍需人工核对；"
+             "④ 只处理 ELF，PHP/lua 驱动的固件直接失明。</div>")
+    L.append("</div>")
+    return "\n".join(L)
+
+
+# ---------------------------------------------------------------- 主流程
+
+def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None,
+           use_agent: bool = False, top_chains: int = 8, samples: int = 3,
+           force: bool = False, log=print) -> dict:
+    os.makedirs(outdir, exist_ok=True)
+    t0 = time.time()
+
+    log("[1/4] 扫描 rootfs …")
+    res = scan(rootfs)
+    cands = [t for t in res.targets][:binaries]
+
+    out = {"rootfs": os.path.abspath(rootfs), "time": time.strftime("%Y-%m-%d %H:%M"),
+           "agent": use_agent, "binaries": []}
+    total_chains = total_kept = 0
+    for i, t in enumerate(cands, 1):
+        log(f"[2/4] {i}/{len(cands)} {t.rel_path}  —  M2 …")
+        b = {"path": t.rel_path, "score": t.score, "role": t.role,
+             "arch": t.arch, "size": t.size}
+        try:
+            m2 = m2_extract(t.abs_path)
+            b["m2_strategy"] = m2["strategy"]
+            b["endpoints"] = len(m2["endpoints"])
+            b["endpoint_list"] = m2["endpoints"]
+        except Exception as ex:                              # noqa: BLE001
+            b["error"] = f"M2 失败：{ex}"
+            out["binaries"].append(b)
+            continue
+
+        lim = limit or (140 if os.path.getsize(t.abs_path) > 512 * 1024 else 40)
+        log(f"        M3（limit {lim}，慢，约几分钟）…")
+        try:
+            m3 = _m3(t.abs_path, lim, force=force)
+            b["chain_list"] = m3["chains"]
+            b["chains"] = sum(1 for c in m3["chains"] if c.get("verdict", "keep") == "keep")
+            b["sink_verified"] = m3["sink_verified"]
+            total_chains += len(m3["chains"])
+            total_kept += b["chains"]
+        except Exception as ex:                              # noqa: BLE001
+            b["error"] = f"M3 失败：{ex}"
+            out["binaries"].append(b)
+            continue
+
+        if use_agent:
+            log(f"        LLM 复核（前 {top_chains} 条，每条 {samples} 次采样）…")
+            try:
+                b["agent_rows"] = _agent(t.abs_path, m3["chains"], top_chains, samples)
+            except Exception as ex:                          # noqa: BLE001
+                b["agent_error"] = str(ex)
+        out["binaries"].append(b)
+
+    rows = []
+    for b in out["binaries"]:
+        rows.extend(b.get("agent_rows") or [])
+    out["agent_rows"] = rows
+    conf = sum(1 for r in rows if r["judge"]["verdict"] == "CONFIRMED")
+    out["stats"] = {
+        "oneline": (f"{len(cands)} 个二进制、{total_chains} 条候选链、保留 {total_kept} 条"
+                    + (f"，LLM 复核 {len(rows)} 条里 {conf} 条 CONFIRMED" if rows else "")
+                    + "。CONFIRMED 仍需人工核对后才能叫漏洞。"),
+        "confirmed": conf, "kept": total_kept, "chains": total_chains,
+        "elapsed": round(time.time() - t0, 1),
+    }
+
+    with open(os.path.join(outdir, "report.json"), "w", encoding="utf-8") as fh:
+        json.dump(out, fh, ensure_ascii=False, indent=1)
+    html_path = os.path.join(outdir, "report.html")
+    with open(html_path, "w", encoding="utf-8") as fh:
+        fh.write(render(out))
+    log(f"[4/4] 完成，用时 {out['stats']['elapsed']}s")
+    log(f"      {html_path}")
+    return out

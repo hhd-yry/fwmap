@@ -1,0 +1,87 @@
+<!doctype html><meta charset='utf-8'><title>fwmap triage</title>
+<style>
+body{font:14px/1.6 -apple-system,"Segoe UI",system-ui,sans-serif;margin:0;background:#f8f9fb;color:#101828}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 22px 80px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:34px 0 10px;padding-bottom:6px;border-bottom:1px solid #e4e7ec}
+.sub{color:#667085;font-size:13px}
+table{border-collapse:collapse;width:100%;background:#fff;border:1px solid #e4e7ec;border-radius:8px;overflow:hidden}
+th{background:#f9fafb;text-align:left;font-weight:600;font-size:12px;color:#475467;padding:8px 10px;border-bottom:1px solid #e4e7ec}
+td{padding:7px 10px;border-bottom:1px solid #f2f4f7;vertical-align:top}
+tr:last-child td{border-bottom:0}
+code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.note{background:#eff8ff;border-left:3px solid #2e90fa;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;color:#175cd3}
+.warn{background:#fffaeb;border-left:3px solid #f79009;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;color:#b54708}
+.card{background:#fff;border:1px solid #e4e7ec;border-radius:8px;padding:14px 16px;margin:10px 0}
+.small{font-size:12.5px;color:#667085}
+</style>
+<div class='wrap'>
+<h1>fwmap triage · dir842</h1>
+<div class='sub'>C:\deepseek\fwmap-revive\fw\p2\dir842 · 生成于 2026-11-08 15:58 · LLM 复核已开</div>
+<div class='card'><b>一句话</b>：1 个二进制、17 条候选链、保留 7 条，LLM 复核 7 条里 5 条 CONFIRMED。CONFIRMED 仍需人工核对后才能叫漏洞。</div>
+<h2>① 该先看哪些文件（M1）</h2>
+<table><tr><th>#</th><th>分数</th><th>角色</th><th>架构</th><th>大小</th><th>路径</th><th>端点</th><th>链</th></tr>
+<tr><td>1</td><td><b>91</b></td><td>http_server</td><td>MIPS</td><td>220K</td><td class='mono'>htdocs/cgibin</td><td>33</td><td>7</td></tr>
+</table>
+<div class='small' style='margin-top:6px'>分数只表示“攻击面有多大”，不是“有没有漏洞”。</div>
+<h2>② htdocs/cgibin</h2>
+<div class='small'>M2 策略 <code>strcmp-chain</code>，端点 33 个（前 8 个）</div>
+<table><tr><th>端点</th><th>handler</th><th>置信</th></tr>
+<tr><td class='mono'>/dlcfg.cgi</td><td class='mono'>00405a1c</td><td>medium</td></tr>
+<tr><td class='mono'>/htdocs/web/Index.html</td><td class='mono'>(未定位)</td><td>low</td></tr>
+<tr><td class='mono'>/htdocs/web/Login.html</td><td class='mono'>(未定位)</td><td>low</td></tr>
+<tr><td class='mono'>/htdocs/web/UpdateFirmware_Fail.html</td><td class='mono'>(未定位)</td><td>low</td></tr>
+<tr><td class='mono'>/htdocs/web/UpdateFirmware_Valid.html</td><td class='mono'>(未定位)</td><td>low</td></tr>
+<tr><td class='mono'>/htdocs/web/Wizard.html</td><td class='mono'>(未定位)</td><td>low</td></tr>
+<tr><td class='mono'>/htdocs/web/WizardExtender.html</td><td class='mono'>(未定位)</td><td>low</td></tr>
+<tr><td class='mono'>/htdocs/web/authentication.cgi</td><td class='mono'>(未定位)</td><td>low</td></tr>
+</table>
+<div class='small' style='margin-top:10px'>M3：找到 17 条链，保留 <b>7</b> 条，其中 3 条诱导汇做过“形参到没到 system”的确认。</div>
+<table><tr><th>函数</th><th>源</th><th>汇</th><th>跳</th><th>说明</th></tr>
+<tr><td class='mono'>FUN_0041b438</td><td class='mono'>getenv(HTTP_SOAPACTION)</td><td class='mono'>sprintf<span class='small'> [bof]</span></td><td>2</td><td class='small'>—</td></tr>
+<tr><td class='mono'>FUN_0041529c</td><td class='mono'>FUN_00414f40(SERVICE)</td><td class='mono'>FUN_004151d0<span class='small'> [ci]</span></td><td>1</td><td class='small'>诱导源、诱导汇</td></tr>
+<tr><td class='mono'>FUN_0041529c</td><td class='mono'>FUN_00414f40(EVENT)</td><td class='mono'>FUN_004151d0<span class='small'> [ci]</span></td><td>1</td><td class='small'>诱导源、诱导汇</td></tr>
+<tr><td class='mono'>FUN_0041d0a8</td><td class='mono'>FUN_0041c560(LOGINPASSWORD)</td><td class='mono'>strcpy<span class='small'> [bof]</span></td><td>1</td><td class='small'>诱导源</td></tr>
+<tr><td class='mono'>FUN_0041d0a8</td><td class='mono'>FUN_0041c560(USERNAME)</td><td class='mono'>strcpy<span class='small'> [bof]</span></td><td>1</td><td class='small'>诱导源</td></tr>
+<tr><td class='mono'>FUN_0041d5a0</td><td class='mono'>FUN_0041c560(LOGINPASSWORD)</td><td class='mono'>strcpy<span class='small'> [bof]</span></td><td>2</td><td class='small'>诱导源</td></tr>
+<tr><td class='mono'>FUN_0041d5a0</td><td class='mono'>FUN_0041c560(USERNAME)</td><td class='mono'>strcpy<span class='small'> [bof]</span></td><td>2</td><td class='small'>诱导源</td></tr>
+</table>
+<h2>③ LLM 复核</h2>
+<div class='note'>LLM 只回答“危险调用前有没有真正的保护”，并且必须引用语句编号（证据由我们取回，模型编不了）。裁决由规则给出。</div>
+<div class='card'>
+<div><span style="color:#b42318;background:#fee4e2;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600">CONFIRMED</span> <b class='mono'>FUN_0041b438</b> <span class='mono'>getenv(HTTP_SOAPACTION) → sprintf</span></div>
+<div style='margin-top:6px'>输入来自 env，未见上界检查，污染值直达 `sprintf`</div>
+<div class='small mono' style='margin-top:4px'>危险调用：acStack_108,&quot;%s%s&quot;,param_3,param_1</div>
+</div>
+<div class='card'>
+<div><span style="color:#b54708;background:#fef0c7;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600">REVIEW</span> <b class='mono'>FUN_0041529c</b> <span class='mono'>FUN_00414f40(SERVICE) → FUN_004151d0</span></div>
+<div style='margin-top:6px'>汇 `FUN_004151d0` 是**归纳出来的**执行包装函数，确认不了污染真的进了 system()，需人工核对</div>
+<div class='small mono' style='margin-top:4px'>危险调用：&quot;/usr/sbin/service&quot;,&quot;service&quot;,iVar3,&quot;start&quot;</div>
+</div>
+<div class='card'>
+<div><span style="color:#b54708;background:#fef0c7;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600">REVIEW</span> <b class='mono'>FUN_0041529c</b> <span class='mono'>FUN_00414f40(EVENT) → FUN_004151d0</span></div>
+<div style='margin-top:6px'>汇 `FUN_004151d0` 是**归纳出来的**执行包装函数，确认不了污染真的进了 system()，需人工核对</div>
+<div class='small mono' style='margin-top:4px'>危险调用：&quot;/usr/sbin/event&quot;,&quot;event&quot;,iVar2,0</div>
+</div>
+<div class='card'>
+<div><span style="color:#b42318;background:#fee4e2;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600">CONFIRMED</span> <b class='mono'>FUN_0041d0a8</b> <span class='mono'>FUN_0041c560(LOGINPASSWORD) → strcpy</span></div>
+<div style='margin-top:6px'>输入来自 http_param(induced)，未见上界检查，污染值直达 `strcpy`</div>
+<div class='small mono' style='margin-top:4px'>危险调用：acStack_248,pcVar1</div>
+</div>
+<div class='card'>
+<div><span style="color:#b42318;background:#fee4e2;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600">CONFIRMED</span> <b class='mono'>FUN_0041d0a8</b> <span class='mono'>FUN_0041c560(USERNAME) → strcpy</span></div>
+<div style='margin-top:6px'>输入来自 http_param(induced)，未见上界检查，污染值直达 `strcpy`</div>
+<div class='small mono' style='margin-top:4px'>危险调用：acStack_42c,pcVar1</div>
+</div>
+<div class='card'>
+<div><span style="color:#b42318;background:#fee4e2;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600">CONFIRMED</span> <b class='mono'>FUN_0041d5a0</b> <span class='mono'>FUN_0041c560(LOGINPASSWORD) → strcpy</span></div>
+<div style='margin-top:6px'>输入来自 http_param(induced)，未见上界检查，污染值直达 `strcpy`</div>
+<div class='small mono' style='margin-top:4px'>危险调用：acStack_248,pcVar1</div>
+</div>
+<div class='card'>
+<div><span style="color:#b42318;background:#fee4e2;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600">CONFIRMED</span> <b class='mono'>FUN_0041d5a0</b> <span class='mono'>FUN_0041c560(USERNAME) → strcpy</span></div>
+<div style='margin-top:6px'>输入来自 http_param(induced)，未见上界检查，污染值直达 `strcpy`</div>
+<div class='small mono' style='margin-top:4px'>危险调用：acStack_42c,pcVar1</div>
+</div>
+<h2>边界</h2><div class='warn'>① 分数只表示攻击面大小；② 链是“可疑”，不是“漏洞”；③ 引擎分不清“有界/无界”的所有写法，假阳性仍需人工核对；④ 只处理 ELF，PHP/lua 驱动的固件直接失明。</div>
+</div>

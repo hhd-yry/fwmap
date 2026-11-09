@@ -1,0 +1,193 @@
+# M3.1 源/汇目录
+#
+# 来源：
+#   - FirmAgent (NDSS'26) TaintChecker.py / Pre_Fuzzing/Get_SinkFunc.py 的硬编码表（已复用并扩展）
+#   - 各厂商 web 框架的常见取参函数
+#
+# 格式：<kind> <name>
+#   source       外部可控输入（HTTP 参数/头/Cookie/查询串）
+#   source-weak  半可控（配置、环境变量）—— 只用来排序，不进结论
+#   sink-ci      命令执行
+#   sink-bof     缓冲区操作
+#   sink-fmt     格式化输出（要看参数位置，暂按弱信号）
+#
+# 判断标准（沿用 M1 的规矩）：
+#   sink 是符号问题，规则匹配接近 100%，可以穷举；
+#   source 是语义问题，这里只是**候选**，最终要 M3.2/M3.3 判定。
+
+# ---------------------------------------------------------------- source：GoAhead / Tenda / Realtek 系
+source websGetVar
+source webGetVar
+source j_websGetVar
+source websGetVarN
+source websGetVarInt
+source webGetVarString
+source websHeader
+source websGetCookie
+source websDecodeUrl
+
+# ---------------------------------------------------------------- source：CGI（cgiForm 库）
+source get_cgi
+source get_cgi_var
+source cgiFormString
+source cgiFormStringNoNewlines
+source cgiFormInteger
+source cgiFormFileSize
+source cgiFormFileName
+
+# ---------------------------------------------------------------- source：Realtek / 其他厂商
+source apmib_get
+source web_get_param
+source web_get_para
+source tpi_web_get_param
+source get_web_param
+
+# ---------------------------------------------------------------- source：JSON 接口（很多新固件用）
+source json_object_get_string
+source json_object_get_string_len
+source json_string_value
+
+# ---------------------------------------------------------------- source（弱）：配置/环境
+source-weak nvram_get
+source-weak nvram_safe_get
+source-weak acosNvramConfig_get
+source-weak getenv
+source-weak recv
+source-weak recvfrom
+# 缓冲区型源：数据落在**实参**里，不是返回值里（见 m3flow.BUFFER_SOURCE）。
+# VIVOTEK CC8160 的 httpd 用 recvmsg 读 socket，不补这条整类目标失明；
+# read 覆盖 CGI 从 stdin 读 body 的写法。
+source-weak recvmsg
+source-weak read
+
+# ---------------------------------------------------------------- sink：命令执行
+sink-ci system
+sink-ci _system
+sink-ci popen
+sink-ci doSystemCmd
+sink-ci CsteSystem
+sink-ci twsystem
+sink-ci doSystem
+sink-ci FCGI_popen
+sink-ci rut_doSystemAction
+sink-ci execv
+sink-ci execve
+sink-ci execvp
+
+# ---------------------------------------------------------------- sink：缓冲区
+sink-bof strcpy
+# strncpy 只在"长度实参不是常数"时算溢出（判定见 m3flow._rule_check）。
+# 它在 BOUNDED 里，但那是"按长度有界"，不是"安全"——VIVOTEK 的真溢出
+# 就是 strncpy(16 字节栈, src, 请求头长度)，旧规则把它当安全代码杀掉了。
+sink-bof strncpy
+sink-bof strcat
+sink-bof sprintf
+sink-bof vsprintf
+sink-bof gets
+sink-bof sscanf
+sink-bof cmsUtl_strcpy
+sink-bof alloca
+
+# ---------------------------------------------------------------- sink（弱）：格式串 / 内存
+sink-fmt printf
+sink-fmt fprintf
+sink-fmt syslog
+sink-fmt memcpy
+
+# ---- induced profile ----
+# 由 InduceSources / InduceSinks 归纳，人工复核后再当 source/sink 用
+source-induced FUN_0001837c
+source-induced FUN_000282bc
+source-induced FUN_00028430
+source-induced FUN_0002b950
+source-induced FUN_0002ba8c
+source-weak FUN_0002be4c
+source-weak FUN_0002c40c
+source-induced FUN_000415d0
+source-induced FUN_00041788
+source-induced FUN_00041dac
+source-induced FUN_00041e00
+source-weak FUN_00041e3c
+source-weak FUN_0004e240
+source-weak FUN_0004ec58
+source-weak FUN_00067ed4
+source-weak FUN_0006d4a8
+source-weak FUN_00070850
+source-weak bm_get_id_list
+source-weak FUN_0008f234
+source-weak FUN_0009a9a4
+source-weak FUN_0009ca20
+source-weak FUN_0009cae0
+source-induced FUN_0009e384
+sink-ci-induced FUN_0003d6e0
+sink-ci-induced TendaTelnet
+sink-ci-induced FUN_000a620c
+sink-ci-induced FUN_000307ec
+sink-ci-induced FUN_0002e420
+sink-ci-induced FUN_0002e9ec
+sink-ci-induced FUN_000311c8
+sink-ci-induced FUN_00031380
+sink-ci-induced FUN_0003150c
+sink-ci-induced FUN_00031ab0
+sink-ci-induced FUN_000386e8
+sink-ci-induced FUN_0003a30c
+sink-ci-induced FUN_0003aef4
+sink-ci-induced FUN_0003b598
+sink-ci-induced FUN_0003b6c8
+sink-ci-induced FUN_0003c708
+sink-ci-induced FUN_0003c940
+sink-ci-induced FUN_0003cb60
+sink-ci-induced FUN_0003d8e0
+sink-ci-induced formMfgTest
+sink-ci-induced formWriteFacMac
+sink-ci-induced formQuickIndex
+sink-ci-induced delay_restart_multiWAN
+sink-ci-induced fromSysStatusHandle
+sink-ci-induced formGetRouterStatus
+sink-ci-induced formSetClientState
+sink-ci-induced formSetSpeedWan
+sink-ci-induced formSetQosBand
+sink-ci-induced form_fast_setting_pppoe_get
+sink-ci-induced form_fast_setting_pppoe_set
+sink-ci-induced form_fast_setting_internet_set
+sink-ci-induced FUN_000699d4
+sink-ci-induced FUN_0006a2ac
+sink-ci-induced FUN_0006a318
+sink-ci-induced FUN_0006b744
+sink-ci-induced FUN_0006d344
+sink-ci-induced FUN_0006fad8
+sink-ci-induced FUN_0006fdf0
+sink-ci-induced formGetWanParameter
+sink-ci-induced formNatSet
+sink-ci-induced fromSysToolChangePwd
+sink-ci-induced FUN_0007b8e4
+sink-ci-induced formSetAutoQosInfo
+sink-ci-induced formWifiBasicSet
+sink-ci-induced FUN_000942a4
+sink-ci-induced formWifiStatisticClear
+sink-ci-induced formStartWifiWps
+sink-ci-induced fromSetWifiGusetBasic
+sink-ci-induced FUN_000a0d74
+sink-ci-induced fromsetApModeCfg
+sink-ci-induced fromSetWirelessRepeat
+sink-ci-induced formSetUsbPrint
+sink-ci-induced formSetSambaConf
+sink-ci-induced formsetUsbUnload
+sink-ci-induced FUN_000a7b00
+sink-ci-induced FUN_000a7cf8
+sink-ci-induced FUN_000a88a4
+sink-ci-induced FUN_000a92fc
+sink-ci-induced FUN_000a933c
+sink-ci-induced formSetFirewallCfg
+sink-ci-induced FUN_000ae260
+sink-ci-induced FUN_000af51c
+sink-ci-induced FUN_000b00fc
+sink-ci-induced FUN_000b02e8
+sink-ci-induced formSetIptv
+sink-ci-induced setSmartPowerManagement
+sink-ci-induced wan_lan_same_deal
+sink-ci-induced FUN_000b723c
+sink-ci-induced formAddMacfilterRule
+sink-ci-induced formDelMacfilterRule
+sink-ci-induced GetProduct
+sink-ci-induced FUN_00077b88
