@@ -200,6 +200,17 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--agent", action="store_true", help="连本地模型一起检查")
     d.set_defaults(func=cmd_doctor)
 
+    v = sub.add_parser("verify", help="新颖性核对：按函数名 + 路由名查 NVD")
+    v.add_argument("input", help="m3 --flow 的 flow.json，或 triage 的 report.json")
+    v.add_argument("--m2", help="端点映射（输入是 flow.json 时需要）")
+    v.add_argument("--out", "-o", help="输出 markdown（默认 <输入>.verify.md）")
+    v.add_argument("--limit", type=int, default=0, help="只核对前 N 个函数")
+    v.add_argument("--only", help="只核对函数名包含该子串的")
+    v.add_argument("--delay", type=float, default=6.5, help="请求间隔秒（NVD 无 key 有限流）")
+    v.add_argument("--refresh", action="store_true", help="忽略缓存重新查询")
+    v.add_argument("--dry-run", action="store_true", help="只列出关键词，不发请求")
+    v.set_defaults(func=lambda a: __import__("fwmap.verify", fromlist=["run"]).run(a))
+
     st = sub.add_parser("setup", help="下载安装 Ghidra / JDK（换机器后先跑这个）")
     st.add_argument("--ghidra", action="store_true", help="只装 Ghidra")
     st.add_argument("--jdk", action="store_true", help="只装 JDK")

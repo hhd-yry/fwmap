@@ -32,6 +32,7 @@
 - **多采样自洽**：同一线索采样 3 次，不一致即弃权（`UNPROVEN`）。
 - **零配置迁移**：Ghidra、模型、依赖均支持「环境变量 → 常见路径 → 包内相对路径」三级回退；`fwmap setup` 可自动安装 Ghidra 与 JDK。
 - **一键自检**：`fwmap doctor` 输出环境检查表。
+- **新颖性核对**：`fwmap verify` 按「函数名 + 路由名」双路检索 NVD，自动判断线索是否已被公开报告。
 
 ---
 
@@ -100,6 +101,45 @@ python -m fwmap doctor --agent     # 环境自检
 4. **边界说明**：工具自身的能力限制。
 
 示例报告见 [`examples/示例报告-DIR842.html`](examples/示例报告-DIR842.html)。
+
+---
+
+## 新颖性核对（verify）
+
+判断一条线索「是不是已经被人报过」，是整条流程里最容易出错的一步。
+
+`verify` 采用**双路检索**：
+
+1. 用**函数名**查 NVD —— 多数公告会写函数名；
+2. 再用它对应的**路由名**查一次 —— 很多公告只写 URL，不写函数名。
+
+```bash
+# 输入可以是 triage 的 report.json（自带端点映射）
+python -m fwmap verify out/myfw/report.json
+
+# 也可以拆开：数据流 + 端点映射
+python -m fwmap verify out/3_m3.flow.json --m2 out/2_m2.json
+
+# 先看看它会查哪些关键词，不发请求
+python -m fwmap verify out/3_m3.flow.json --m2 out/2_m2.json --dry-run
+```
+
+结论分三类：
+
+| 结论 | 含义 |
+|---|---|
+| `known` | 命中已公开 CVE（并确认关键词出现在描述里） |
+| `unknown` | 按函数名/路由名都没查到 |
+| `manual` | 函数名为 `FUN_xxxx` / `sub_xxxx`，无法检索，需人工 |
+
+**实测**：`formDLNAserver` 按函数名查不到任何记录；按路由名 `SetDlnaCfg` 一查即命中
+**CVE-2024-10661**，描述中的版本号 `15.03.05.19` 与目标完全一致。
+
+> **`unknown` 不等于新漏洞。** 它只说明按这个名字在 NVD 里查不到；大量固件漏洞从未申请 CVE，
+> 或公告只写型号和 URL。结论必须人工复核。
+>
+> NVD 无 API key 时限流约 5 次 / 30 秒，本命令默认间隔 6.5 秒并把结果缓存 7 天
+> （`~/.fwmap/nvd-cache.json`），重复核对不会重复请求。
 
 ---
 
@@ -202,6 +242,7 @@ fwmap-tool/
 | `m3` | 源/汇提取与数据流分析 |
 | `agent` | 对已有链运行 LLM 复核 |
 | `triage` | 串联四层，生成 HTML 报告 |
+| `verify` | 新颖性核对：函数名 + 路由名双路检索 NVD |
 | `check` | 校验 rootfs 解包完整性 |
 | `doctor` | 环境自检 |
 | `setup` | 安装 / 校验 Ghidra 与 JDK |
