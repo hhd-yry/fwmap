@@ -302,6 +302,9 @@ def main(argv: list[str] | None = None) -> int:
     bf.add_argument("--port", type=int, default=80, help="服务端口（默认 80）")
     bf.add_argument("--only", help="只测函数名包含该子串的链")
     bf.add_argument("--lengths", help="逗号分隔的载荷长度（默认 64..4096 递进）")
+    bf.add_argument("--threshold", action="store_true",
+                    help="改用二分找「最小崩溃长度」（不依赖 gdb，适用于 fork 型目标）")
+    bf.add_argument("--hi", type=int, default=8192, help="阈值二分的上界（默认 8192）")
     bf.add_argument("--timeout", type=float, default=10.0, help="单轮等待秒数")
     bf.add_argument("-o", "--out", help="输出 markdown")
     bf.set_defaults(func=lambda a: __import__("fwmap.exploit", fromlist=["run"]).run(a))

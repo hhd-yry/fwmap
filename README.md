@@ -339,6 +339,7 @@ fwmap-tool/
 | `verify` | 新颖性核对：函数名 + 路由名双路检索（有网走 API，没网用离线库） |
 | `nvd` | 离线 NVD 索引：`fetch` / `build` / `update` / `check` / `status` / `search` |
 | `dyn` | 动态验证：把 PoC 打进模拟器里的二进制，看它崩不崩 |
+| `bof` | 栈溢出：`--threshold` 二分出「多长就崩」，串起 qemu+gdb 读寄存器 |
 | `check` | 校验 rootfs 解包完整性 |
 | `doctor` | 环境自检 |
 | `setup` | 安装 / 校验 Ghidra 与 JDK |
