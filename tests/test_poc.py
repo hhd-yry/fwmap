@@ -114,7 +114,20 @@ def main() -> int:
                              None, port=80, cmd="id -a")
     ok &= check("--cmd 不污染 bof 链", "id -a" not in rq2[0]["value"], rq2[0]["value"])
 
-    # 2c) 副作用路径映射：chroot 模式下 /tmp/x 要落到 rootfs 里
+    # 2d) L2：cyclic pattern 与偏移反查
+    from fwmap import exploit as ex
+
+    pat = ex.cyclic(4096)
+    ok &= check("cyclic 长度", len(pat) == 4096, len(pat))
+    frag = pat[1234:1238].encode()
+    val = int.from_bytes(frag, "little")
+    ok &= check("偏移反查（小端）", ex.offset_of(val) == 1234, ex.offset_of(val))
+    frag_b = pat[777:781].encode()
+    ok &= check("偏移反查（大端）",
+                ex.offset_of(int.from_bytes(frag_b, "big")) == 777,
+                ex.offset_of(int.from_bytes(frag_b, "big")))
+    ok &= check("非 pattern 的值返回 None", ex.offset_of(0x41414141) is None,
+                ex.offset_of(0x41414141))
     rf = tempfile.mkdtemp(prefix="fwmap-rootfs-")
     mapped = dyn._effect_path(rf, "/tmp/pwned").replace("\\", "/")
     ok &= check("effect 路径映射", mapped.endswith("tmp/pwned") and rf.replace("\\", "/") in mapped,
