@@ -1,26 +1,30 @@
 # fwmap
 
-> 固件攻击面分诊工具：从一个**已解包的固件 rootfs** 出发，自动收敛到「先看哪个二进制、它处理哪些端点、哪些外部输入能流到危险函数」，并由本地大模型对每条线索逐条取证。
+> 固件攻击面分诊工具：从一个**已解包的固件 rootfs** 出发，自动收敛到「先看哪个二进制、它处理哪些端点、哪些外部输入能流到危险函数」，由本地大模型对每条线索逐条取证，再回答两个收尾问题——**这是不是别人已经报过**（离线 NVD）、**它现在真的打得动吗**（qemu 里真跑）。
 >
-> 目标是降低人工阅读量，而不是自动判定漏洞。
+> 目标是降低人工阅读量、并给出可复现的证据，而不是自动判定漏洞。
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![LLM](https://img.shields.io/badge/LLM-local%20only-8A2BE2)](#设计取舍)
 [![Ghidra](https://img.shields.io/badge/backend-Ghidra%2012.x-orange)](https://ghidra-sre.org/)
+[![Offline](https://img.shields.io/badge/offline-42%E4%B8%87%E6%9D%A1CVE%E6%9C%AC%E5%9C%B0%E5%BA%93-success)](#新颖性核对verify)
 
 ---
 
 ## 概述
 
-嵌入式固件通常包含数百个可执行文件，人工逐个审计不现实。`fwmap` 采用四层收敛流程：
+嵌入式固件通常包含数百个可执行文件，人工逐个审计不现实。`fwmap` 采用四层收敛 + 两道收尾：
 
 1. **按攻击面排序**，把上千个文件压缩到一两个目标；
 2. **建立端点与处理函数的映射**；
 3. **在反编译出的 C 代码上做语句级污点分析**，输出「源 → 汇」候选链；
-4. **调用本地 LLM 逐条取证**，由规则给出最终裁决。
+4. **调用本地 LLM 逐条取证**，由规则给出最终裁决；
+5. **新颖性核对**：按「函数名 + 路由名」双路查 NVD —— 在线 API，或**断网可用的 42 万条离线库**；
+6. **动态验证**：把链翻译成 PoC，在 qemu 里把固件跑起来真打一遍，并用**对照组**排除环境干扰。
 
 全流程离线运行，不依赖任何在线 API。
+
 
 ---
 
@@ -34,6 +38,11 @@
 - **一键自检**：`fwmap doctor` 输出环境检查表。
 - **新颖性核对**：`fwmap verify` 按「函数名 + 路由名」双路检索 NVD，自动判断线索是否已被公开报告。
 - **断网可用**：`fwmap nvd` 把 NIST 官方 CVE 全量数据（2002 至今，42 万条）建成离线库；`verify` 有网走 API、没网查本地，结论一致。
+- **动态验证**：`fwmap dyn` 把链翻译成 PoC，在 qemu 里真跑固件打一遍；开跑前先打一发**对照组**，把「环境崩溃」和「载荷触发」分开。
+- **命令注入可直接打**：`dyn --cmd "任意命令" --check <副作用文件>`，工具负责把命令包成能突破 `echo '%s'` 单引号包装、`;` 截断的形态。
+- **溢出阈值可测**：`fwmap bof --threshold` 二分出「多长就崩」，不依赖调试器，fork 型目标也能用。
+- **解包自检**：`fwmap check` 会拦下「符号链接在解包时丢了」这类致命问题——它会让固件里所有 `system()` 变成 `ENOEXEC`。
+
 
 ---
 
@@ -53,6 +62,14 @@
                    Agent 复核
               （本地 LLM 取证 + 规则裁决）
                         │
+         ┌──────────────┴──────────────┐
+         │                             │
+    verify 新颖性核对              dyn 动态验证
+  （离线 42 万条 CVE）           （qemu 真跑固件）
+   已公开/未命中/需人工           对照组 → 载荷 → 崩溃 / 命令执行
+         │                             │
+         └──────────────┬──────────────┘
+                        │
                    report.html
 ```
 
@@ -62,6 +79,8 @@
 | M2 | `m2` | 单个 ELF → 端点/处理函数表 | Ghidra | 1–2 分钟 |
 | M3 | `m3 --induce --flow` | 函数 → 源到汇的链 | Ghidra | 数分钟至数十分钟 |
 | 复核 | `agent` | 链 → 裁决 + 证据 | 本地模型 | 每条 20–75 秒 |
+| 核对 | `verify` | 链 → 已公开 / 未命中 | 离线库或 NVD API | 0.3 秒 / 函数（离线） |
+| 验证 | `dyn` / `bof` | 链 → 崩溃 / 命令执行 / 溢出阈值 | qemu（+ root） | 每条数十秒 |
 | 汇总 | `triage` | rootfs → 完整 HTML 报告 | 以上全部 | 约 10–30 分钟 |
 
 ---
@@ -251,7 +270,21 @@ NVRAM（`/dev/mtdblock0` ← `etc/config.bin`）怎么补，见
 
 > 上述指标基于标注集，不代表真实环境中的绝对精度。`CONFIRMED` 仍需人工核对。
 
-**动态验证**：在 QEMU 中运行真实固件，复现 D-Link DIR-842 的栈溢出，返回地址完全受控（`pc = ra = 0x41414141`），对应 CVE-2020-8962。
+**动态验证（真固件）**：在 Ubuntu 22.04 + qemu-user-static 上把 Edimax BR-6478AC v1.23
+的 `bin/webs` 真跑起来，对 `/goform/formStaDrvSetup` 的 `rootAPmac` 参数完成端到端验证：
+
+| 项 | 结果 |
+|---|---|
+| 命令注入 | **已执行**：`x'⏎cp /etc/passwd /tmp/pwned⏎'` → 固件里真的写了 `/tmp/pwned`（CVE-2026-10127 同款） |
+| 对照组 | 无害 `GET /` 与 `rootAPmac=AAAA` 均不执行命令 —— 证明不是环境碰巧 |
+| 溢出阈值 | `--threshold` 二分测得 **801 字节**（797 不崩 / 801 崩），与静态 `acStack_340`（帧内 0x340）吻合 |
+
+> 精确 `ra` 偏移与 PC 可控**尚未**拿下：Boa 每连接 fork，崩溃在子进程，
+> qemu 的 gdbstub 跟不到。这条路的状态写在 [`docs/L2-返回地址可控.md`](docs/L2-返回地址可控.md)。
+
+**动态验证（合成靶子）**：`examples/合成靶子.c` 故意 `strcpy` 溢出 64 字节栈缓冲区，
+64 字节不崩、200 字节被访问违例打死（`0xC0000005`），用来证明执行链路本身可用。
+
 
 ---
 
@@ -312,15 +345,22 @@ fwmap-tool/
 │   ├── m2.py               M2 端点映射
 │   ├── m3.py               M3.1 源/汇提取与框架归纳
 │   ├── m3flow.py           M3.2 数据流分析（核心）
+│   ├── auth.py             M2.5 端点鉴权检查
+│   ├── verify.py           M4 新颖性核对
+│   ├── nvd.py              离线 NVD 索引（fetch / build / update）
+│   ├── poc.py              PoC 生成（按汇类别选载荷）
+│   ├── dyn.py              动态验证（qemu 执行 + 对照组）
+│   ├── exploit.py          溢出阈值 / 返回地址可控性探测
 │   ├── triage.py           四层串联与报告生成
+│   ├── check.py            rootfs 解包自检
 │   ├── setup.py            依赖安装
 │   ├── elf.py              ELF 解析（支持 sstrip）
 │   └── agent/              LLM 取证与规则裁决
 ├── ghidra_scripts/         13 个 Ghidra 脚本
-├── tests/                  回归测试
-├── examples/               示例流程与报告
+├── tests/                  8 套回归测试
+├── examples/               示例报告、合成靶子
+├── docs/                   专题文档（离线 NVD / 固件起机 / L2 / A 轮）
 ├── 使用手册.md              详细用法
-├── 案例-负结果-Tenda19.html  实战案例
 └── README.md
 ```
 
@@ -354,6 +394,10 @@ fwmap-tool/
 4. **端点可达性未闭环。** 未注册路由且无交叉引用的死代码仍可能出现在候选中。
 5. **框架归纳存在边界。** 当前归纳规则针对 Tenda/D-Link 一类写法；在 GoAhead 等框架上识别率显著下降。
 6. **鉴权判定只看证据存在性。** `unprotected` 是未鉴权候选，父级函数或前置代理鉴权无法完全排除；`protected` 不保证鉴权实现正确（弱比较、可预测 token 查不出来）。
+7. **动态验证需要 Linux + root。** chroot 起机、绑 80 端口都要 root；真正跑起来还常需要补 NVRAM（见 `docs/动态验证-固件起机.md`）。
+8. **`bof` 只到阈值，未到 PC 可控。** fork 型目标（Boa）崩溃在子进程，qemu gdbstub 跟不到，精确 `ra` 偏移仍未拿下。
+9. **`fmt` 类尚未验证。** 只标可疑，没做 `%x` 泄漏验证。
+10. **解包务必在 Linux 上做。** Windows 解 squashfs 会把符号链接变成 0 字节文件，`/bin/sh` 变空，固件里所有 `system()` 都会 `ENOEXEC`；`fwmap check` 会拦这种情况。
 
 ---
 
@@ -372,7 +416,11 @@ fwmap-tool/
 ## 文档
 
 - [使用手册.md](使用手册.md)：完整用法、字段含义、常见问题
-- [案例-负结果-Tenda19.html](案例-负结果-Tenda19.html)：实战分析记录
+- [docs/离线NVD.md](docs/离线NVD.md)：把 NIST 官方 42 万条 CVE 做成断网可用的本地库
+- [docs/动态验证-固件起机.md](docs/动态验证-固件起机.md)：把固件在 qemu 里真正跑起来的六个坑，以及 NVRAM 怎么补
+- [docs/L2-返回地址可控.md](docs/L2-返回地址可控.md)：溢出阈值与「PC 可控」还差什么
+- [docs/A轮-筛查未报过的handler.md](docs/A轮-筛查未报过的handler.md)：7 个从未进过 CVE 的 handler 的筛查结论
+- [案例-负结果-Tenda19.html](案例-负结果-Tenda19.html)：Tenda AC15 的完整分析记录
 
 ---
 
