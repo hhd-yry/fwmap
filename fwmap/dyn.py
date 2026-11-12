@@ -291,6 +291,11 @@ def _markdown(results, args, arch, label) -> str:
             val = q["value"].replace("|", "/").replace("`", "'")
             preview = val if len(val) <= 28 else f"{val[:14]}…（{len(val)}B）"
             detail = res.get("detail") or res.get("stderr", "")[:80] or ""
+            code = res.get("exit")
+            if not detail and isinstance(code, int):
+                # 崩溃的退出码要写出来，否则报告里只有「崩溃」两个字，无法复核
+                detail = (f"退出码 0x{code & 0xFFFFFFFF:08X}" if code >= 0
+                          else f"被信号 {-code} 打死")
             L.append(f"| `{q['param']}` = `{preview}` | {MARK.get(res['status'], res['status'])} | "
                      f"{detail.replace('|', '/')} |")
         if r["rows"]:
