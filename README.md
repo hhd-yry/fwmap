@@ -219,6 +219,10 @@ PoC 按汇的类别选载荷：
 验证过：64 字节不崩、200 字节被访问违例打死（`0xC0000005`）。结果见
 [`examples/合成靶子-dyn验证.md`](examples/合成靶子-dyn验证.md)。
 
+在真固件（Edimax BR-6478AC）上把 webs 跑起来的完整踩坑记录、以及
+NVRAM（`/dev/mtdblock0` ← `etc/config.bin`）怎么补，见
+[`docs/动态验证-固件起机.md`](docs/动态验证-固件起机.md)。
+
 
 
 ---
