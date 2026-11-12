@@ -1,0 +1,26 @@
+# fwmap 依赖
+#
+# 分层说明：
+#   M1（scan / check / doctor）与 M2/M3 的核心分析 —— **只用标准库**，不需要装任何东西。
+#   只有 agent 层（--agent，本地 LLM 取证）需要下面四个包。
+#
+# 安装（agent 层）：
+#   py -3.13 -m pip install -r requirements.txt
+#
+# 本机实测可用的组合（Windows + RTX 4060 Laptop 8 GB，CUDA 12.4）：
+#   torch==2.6.0+cu124
+#   transformers==5.10.2
+#   bitsandbytes==0.50.2      # 必须与 torch 的 CUDA 版本一致：wheel 内含
+#                             # libbitsandbytes_cuda118/121/124/126/128/130/132.dll
+#   accelerate>=1.1.0
+#
+# 注意两个已知坑：
+#   1) bitsandbytes 官方 Windows wheel 在 PyPI 上通常装不上，可下 whl 当 zip 解压，
+#      再把目录加进 PYTHONPATH（详见 使用手册.md）。
+#   2) transformers 5.x 比 torch 2.6 新时缺 torch.float8_e8m0fnu，
+#      fwmap/agent/llm.py 里已做带条件判断的兼容补丁。
+
+torch>=2.4
+transformers>=4.45
+bitsandbytes>=0.43
+accelerate>=1.1.0

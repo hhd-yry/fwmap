@@ -732,6 +732,7 @@ def analyze_c(func_name: str, addr: str, c_text: str,
         src_call = next(((n, a) for n, a in calls if n in sources), None)
         sink_call = next(((n, a) for n, a in calls if n in sinks), None)
         m = _assign(stmt) if calls else None
+        skip_assign = False
 
         if src_call:
             info = {"api": src_call[0], "param": _first_string(src_call[1]),
@@ -747,12 +748,15 @@ def analyze_c(func_name: str, addr: str, c_text: str,
                 # 出参形式：数据在 &x 里，返回值只是错误码
                 _taint_out_params(src_call[1], info, tainted)
                 if m:
-                    continue
+                    # 本语句是 "x = 源(...)"。不能直接 continue——否则
+                    # `x = sprintf(dst, fmt, websGetVar(...))` 这类「源内联在汇实参里」
+                    # 的语句连汇都检查不到，整条链会漏掉。只跳过重复的赋值处理。
+                    skip_assign = True
 
         _kill_buffer_taint(calls, tainted)
         _taint_buffer_write(calls, tainted)
 
-        if m:
+        if m and not skip_assign:
             _kill_stale_taint(m.group(1), m.group(2), tainted, src_call is not None, stmt)
             _propagate_through_calls(calls, m, tainted)
 
