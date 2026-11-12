@@ -294,6 +294,21 @@ def _load(path: str):
     return _read_json(path)
 
 
+def _effect_path(rootfs: str | None, path: str) -> str:
+    """把固件里的绝对路径映射到宿主上的位置（chroot 模式要用 rootfs 前缀）。"""
+    if rootfs and os.path.isdir(rootfs) and path.startswith("/"):
+        return os.path.join(rootfs, path.lstrip("/"))
+    return path
+
+
+def _read_effect(path: str) -> str:
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(300).decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
 def run(args) -> int:
     from . import poc
 
@@ -338,9 +353,15 @@ def run(args) -> int:
                   "不是漏洞。下面的结果只能当「未验证」。")
 
     env_broken = bool(control and control["status"] == "crash")
+    effect_path = _effect_path(args.rootfs, args.check) if args.check else None
+
     for c in chains:
+        cat = (c.get("sink_category") or "").lower()
+        # 只有「命令注入 + 指定了 --cmd」才有「执行副作用」这个概念。
+        # 别的链（比如 bof）如果也去查证据文件，会被上一轮留下的文件骗成假阳性。
+        can_exec = bool(getattr(args, "cmd", None)) and cat in ("ci", "cmd")
         reqs = poc.build_requests(c, ep_by_fn.get(c.get("function") or ""),
-                                  port=args.port)
+                                  port=args.port, cmd=getattr(args, "cmd", None))
         rows = []
         for r in reqs[: args.max_payloads]:
             if args.dry_run or not label:
@@ -349,13 +370,22 @@ def run(args) -> int:
             if env_broken:
                 rows.append({"req": r, "result": {"status": "env-broken"}})
                 continue
+            if can_exec and effect_path:
+                try:
+                    os.remove(effect_path)   # 每条请求前都清，避免上一轮残留
+                except OSError:
+                    pass
             print(f"    {c.get('function')} · {r['param']}={len(r['value'])}B … ",
                   end="", flush=True)
             res = run_request(r, runtime, timeout=args.timeout)
+            # 命令注入不一定崩，真正的证据是「命令的副作用出现了」
+            if can_exec and effect_path and os.path.exists(effect_path):
+                res["status"] = "exec-confirmed"
+                res["effect"] = _read_effect(effect_path)
             print(res["status"])
             rows.append({"req": r, "result": res})
-            if res["status"] == "crash":
-                break                     # 崩了就停，不用再加码
+            if res["status"] in ("crash", "exec-confirmed"):
+                break                     # 有结论了，不用再加码
         results.append({"chain": c, "rows": rows})
 
     if args.out:
@@ -377,7 +407,14 @@ def run(args) -> int:
     if env_broken:
         print("[+] 全部标为「环境崩溃，未验证」——先修好运行环境（NVRAM/设备）再谈漏洞")
         return 3
+    hits = [x for r in results for x in r["rows"] if x["result"]["status"] == "exec-confirmed"]
     crashes = sum(1 for r in results for x in r["rows"] if x["result"]["status"] == "crash")
+    if hits:
+        print(f"[+] **命令执行确认 {len(hits)} 条** —— 注入的命令真的跑了")
+        for h in hits[:3]:
+            print(f"    载荷：{h['req']['value']!r}")
+            if h["result"].get("effect"):
+                print(f"    副产物：{h['result']['effect'].strip()[:120]}")
     print(f"[+] 崩溃 {crashes} 条 · 未崩溃 "
           f"{sum(1 for r in results for x in r['rows'] if x['result']['status'] == 'no-crash')} 条")
     return 0
@@ -427,7 +464,8 @@ def _markdown(results, args, arch, label, control=None) -> str:
             L.append("> ⚠ 对照组连端口都没起来，说明服务没跑起来，下面的结果无效。")
             L.append("")
     MARK = {"crash": "**崩溃**", "no-crash": "未崩溃", "no-listener": "未验证",
-            "not-run": "未执行", "env-broken": "环境崩溃·未验证"}
+            "not-run": "未执行", "env-broken": "环境崩溃·未验证",
+            "exec-confirmed": "**命令已执行**"}
     for r in results:
         c = r["chain"]
         L.append(f"## `{c.get('function')}` → {c.get('sink')}[{c.get('sink_category')}]")

@@ -191,7 +191,16 @@ python -m fwmap dyn out/3_m3.flow.json --m2 out/2_m2.json \
 # 真跑（需要 qemu-user；Linux 上 apt install qemu-user-static）
 python -m fwmap dyn out/3_m3.flow.json --m2 out/2_m2.json \
     --binary out/root/bin/webs --rootfs out/root --port 8080
+
+# 命令注入：直接执行任意命令，并拿副作用当证据
+python -m fwmap dyn out/3_m3.flow.json --m2 out/2_m2.json \
+    --binary out/root/bin/webs --rootfs out/root --port 80 \
+    --cmd "cp /etc/passwd /tmp/pwned" --check /tmp/pwned
 ```
+
+`--cmd` 只对命令注入类生效：工具会把命令包成能突破常见包装的形态
+（固件常把值塞进 `echo '%s'` 且按 `;` 截断，所以要「单引号闭合 + 换行」），
+`--check` 则在执行后去固件里读那个文件——**命令副作用才是证据，不是崩溃**。
 
 PoC 按汇的类别选载荷：
 

@@ -284,6 +284,8 @@ def main(argv: list[str] | None = None) -> int:
     dy.add_argument("--arch", help="目标架构（默认从 ELF 头读）")
     dy.add_argument("--port", type=int, default=8080, help="服务端口（默认 8080）")
     dy.add_argument("--only", help="只验证函数名包含该子串的链")
+    dy.add_argument("--cmd", help="命令注入类：要执行的 shell 命令（默认只发探测载荷）")
+    dy.add_argument("--check", help="命令执行后去固件里查这个文件（如 /tmp/pwned）作为证据")
     dy.add_argument("--max-payloads", type=int, default=3, help="每条链最多试几个载荷")
     dy.add_argument("--timeout", type=float, default=8.0, help="单个请求等待秒数")
     dy.add_argument("--dry-run", action="store_true", help="只生成 PoC，不执行")

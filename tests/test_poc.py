@@ -104,6 +104,22 @@ def main() -> int:
     ok &= check("没有 qemu 时 mips → 无运行时", rt is None or "qemu" in rt["label"],
                 rt)
 
+    # 2b) --cmd：命令注入类要能执行任意命令（不是只会打 id）
+    shell = poc.shell_payloads("cp /etc/passwd /tmp/pwned")
+    ok &= check("闭引号+换行载荷", shell[0] == "x'\ncp /etc/passwd /tmp/pwned\n'", shell[0])
+    rq = poc.build_requests(CHAIN, {"uri": "/g"}, port=80, cmd="id -a")
+    ok &= check("--cmd 生效", "id -a" in rq[0]["value"], rq[0]["value"])
+    # bof 链不该被 --cmd 影响
+    rq2 = poc.build_requests({"function": "f", "sink_category": "bof"},
+                             None, port=80, cmd="id -a")
+    ok &= check("--cmd 不污染 bof 链", "id -a" not in rq2[0]["value"], rq2[0]["value"])
+
+    # 2c) 副作用路径映射：chroot 模式下 /tmp/x 要落到 rootfs 里
+    rf = tempfile.mkdtemp(prefix="fwmap-rootfs-")
+    mapped = dyn._effect_path(rf, "/tmp/pwned").replace("\\", "/")
+    ok &= check("effect 路径映射", mapped.endswith("tmp/pwned") and rf.replace("\\", "/") in mapped,
+                mapped)
+
     # 3) 真跑：崩 / 不崩 / 没起来
     py = sys.executable
     bof_chain = {"function": "formStaDrvSetup", "source_api": "websGetVar",
