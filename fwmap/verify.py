@@ -446,6 +446,16 @@ def _make_searcher(args):
     return online, {"kind": "api", "cache": CACHE_PATH, "why": why}
 
 
+def open_backend(source: str = "auto", db: str | None = None,
+                 no_scan: bool = False):
+    """给别的模块（triage）用的入口：返回 (searcher, info)，用完自己 close info["index"]。"""
+    from types import SimpleNamespace
+
+    ns = SimpleNamespace(source=source, db=db, no_scan=no_scan,
+                         refresh=False, delay=0, update_index=False)
+    return _make_searcher(ns)
+
+
 def run(args) -> int:
     try:
         chains, endpoints = load(args.input)

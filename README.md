@@ -171,6 +171,47 @@ python -m fwmap verify ... --source local                # 强制离线
 > 在线模式下 NVD 无 API key 时限流约 5 次 / 30 秒，本命令默认间隔 6.5 秒并把结果缓存 7 天
 > （`~/.fwmap/nvd-cache.json`），重复核对不会重复请求。
 
+`triage` 已经默认接上这一步（`--no-verify` 可关），所以**一条命令出的报告自带「已公开 / 未命中」列**，
+不用跑完再去补一条命令。
+
+---
+
+## 动态验证（dyn）
+
+静态分析说「链在这」，`verify` 说「别人报过类似的」，都还没回答最后一个问题：**它现在真的会崩吗**。
+
+`dyn` 做的是最小闭环：把链翻译成 PoC → 用 qemu 把二进制跑起来 → 把请求打进去 → 看进程是
+正常退出、被信号打死、还是根本没起来。
+
+```bash
+# 先看要打什么（不发请求）
+python -m fwmap dyn out/3_m3.flow.json --m2 out/2_m2.json \
+    --binary out/root/bin/webs --rootfs out/root --dry-run -o poc.md
+
+# 真跑（需要 qemu-user；Linux 上 apt install qemu-user-static）
+python -m fwmap dyn out/3_m3.flow.json --m2 out/2_m2.json \
+    --binary out/root/bin/webs --rootfs out/root --port 8080
+```
+
+PoC 按汇的类别选载荷：
+
+| 汇类别 | 载荷 | 判据 |
+|---|---|---|
+| `bof` | 64 / 200 / 512 / 1024 / 2048 字节，由短到长 | 进程被信号打死 |
+| `ci` | `;id;`、`` `id` ``、`$(id)` | 响应里出现命令输出 |
+| `fmt` | `%08x.` 连发 | 响应里漏出栈内容 |
+
+三种结论**必须分开**，这是这一步最容易出错的地方：
+
+| 状态 | 含义 |
+|---|---|
+| `crash` | 进程被信号打死 / 模拟器报 uncaught target signal —— 有崩溃证据 |
+| `no-crash` | 请求打完了，进程还活着 —— **没有**崩溃证据，不等于安全 |
+| `no-listener` | 服务根本没起来（缺配置、要 root 绑 80）—— **未验证**，不是「没漏洞」 |
+
+当前机器没有 qemu-user 时，命令只会生成 PoC 并打印该在哪儿跑，**不会假装跑过了**。
+
+
 
 ---
 
@@ -276,6 +317,7 @@ fwmap-tool/
 | `triage` | 串联四层，生成 HTML 报告 |
 | `verify` | 新颖性核对：函数名 + 路由名双路检索（有网走 API，没网用离线库） |
 | `nvd` | 离线 NVD 索引：`fetch` / `build` / `update` / `check` / `status` / `search` |
+| `dyn` | 动态验证：把 PoC 打进模拟器里的二进制，看它崩不崩 |
 | `check` | 校验 rootfs 解包完整性 |
 | `doctor` | 环境自检 |
 | `setup` | 安装 / 校验 Ghidra 与 JDK |

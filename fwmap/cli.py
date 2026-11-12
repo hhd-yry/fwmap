@@ -70,6 +70,7 @@ def cmd_triage(args) -> int:
     out = triage(args.rootfs, args.outdir, binaries=args.binaries, limit=args.limit,
                  use_agent=args.agent, top_chains=args.top_chains, samples=args.samples,
                  force=args.force, use_auth=not args.no_auth,
+                 use_verify=not args.no_verify, context=args.context or "",
                  log=log)
     # 全挂也要有非 0 退出码：否则 CI / 断网验收会把「四层一层都没跑成」当成通过。
     bins = out.get("binaries") or []
@@ -200,6 +201,9 @@ def main(argv: list[str] | None = None) -> int:
     tri.add_argument("--samples", type=int, default=3, help="每条链采样几次（默认 3）")
     tri.add_argument("--force", action="store_true", help="丢弃 profile 缓存，重新归纳")
     tri.add_argument("--no-auth", action="store_true", help="跳过 M2.5 端点鉴权检查")
+    tri.add_argument("--no-verify", action="store_true",
+                     help="跳过新颖性核对（默认会查 CVE 库，断网时用离线库）")
+    tri.add_argument("--context", help="目标厂商/型号关键词，逗号分隔（如 Edimax,BR-6478AC）")
     tri.set_defaults(func=cmd_triage)
 
     s = sub.add_parser("scan", help="扫描已解包的 rootfs")
@@ -271,6 +275,21 @@ def main(argv: list[str] | None = None) -> int:
 
     _nvd_dir(nsub.add_parser("status", help="索引状态（条数 / 快照日期 / 大小）"))
     nv.set_defaults(func=lambda a: __import__("fwmap.nvd", fromlist=["run"]).run(a))
+
+    dy = sub.add_parser("dyn", help="动态验证：把 PoC 打进模拟器里的二进制，看它崩不崩")
+    dy.add_argument("flow", help="m3 --flow 的 flow.json")
+    dy.add_argument("--m2", help="端点映射（用来确定打哪个 URL）")
+    dy.add_argument("--binary", required=True, help="要跑的 ELF")
+    dy.add_argument("--rootfs", help="解包后的 rootfs（给 qemu -L 用）")
+    dy.add_argument("--arch", help="目标架构（默认从 ELF 头读）")
+    dy.add_argument("--port", type=int, default=8080, help="服务端口（默认 8080）")
+    dy.add_argument("--only", help="只验证函数名包含该子串的链")
+    dy.add_argument("--max-payloads", type=int, default=3, help="每条链最多试几个载荷")
+    dy.add_argument("--timeout", type=float, default=8.0, help="单个请求等待秒数")
+    dy.add_argument("--dry-run", action="store_true", help="只生成 PoC，不执行")
+    dy.add_argument("-o", "--out", help="输出 markdown")
+    dy.add_argument("--json", help="输出 JSON")
+    dy.set_defaults(func=lambda a: __import__("fwmap.dyn", fromlist=["run"]).run(a))
 
     st = sub.add_parser("setup", help="下载安装 Ghidra / JDK（换机器后先跑这个）")
     st.add_argument("--ghidra", action="store_true", help="只装 Ghidra")

@@ -159,6 +159,24 @@ def _auth_cell(a: dict | None) -> str:
     return f'<td title="{title}"><span class="small">unknown</span></td>'
 
 
+def _nov_cell(c: dict) -> str:
+    """链的「新颖性」单元格。没有核对结果时显示 —，而不是伪造一个结论。"""
+    nov = c.get("novelty")
+    if not nov:
+        return "—"
+    v = nov.get("verdict")
+    if v == "known":
+        conf = {"high": " · 同厂商", "medium": " · 他厂商"}.get(nov.get("confidence") or "", "")
+        ids = "、".join(html.escape(str(x.get("id"))) for x in (nov.get("cves") or [])[:2])
+        return (f"<b style='color:#b45309'>已公开{conf}</b>"
+                + (f" <span class='small'>{ids}</span>" if ids else ""))
+    if v == "unknown":
+        return "<span style='color:#64748b'>未命中</span>"
+    if v == "manual":
+        return "<span style='color:#64748b'>需人工</span>"
+    return "<span style='color:#dc2626'>查询失败</span>"
+
+
 def render(res: dict) -> str:
     e = html.escape
     L = []
@@ -243,7 +261,8 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
                  + (f"，其中 {sv} 条诱导汇做过“形参到没到 system”的确认" if sv else "")
                  + "。</div>")
         if kept:
-            L.append("<table><tr><th>函数</th><th>源</th><th>汇</th><th>跳</th><th>说明</th></tr>")
+            L.append("<table><tr><th>函数</th><th>源</th><th>汇</th><th>跳</th>"
+                     "<th>新颖性</th><th>说明</th></tr>")
             for c in kept[:15]:
                 flags = []
                 if c.get("weak"):
@@ -256,8 +275,18 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
                          f"<td class='mono'>{e(c['source_api'])}({e(c.get('source_param') or '')})</td>"
                          f"<td class='mono'>{e(c['sink'])}<span class='small'> [{e(c.get('sink_category',''))}]</span></td>"
                          f"<td>{c.get('hops',1)}</td>"
+                         f"<td class='small'>{_nov_cell(c)}</td>"
                          f"<td class='small'>{e('、'.join(flags)) or '—'}</td></tr>")
             L.append("</table>")
+            ns = b.get("novelty_summary")
+            if ns:
+                L.append("<div class='small' style='margin-top:6px'>新颖性核对："
+                         f"已公开 <b>{ns['known']}</b> · 未命中 {ns['unknown']}"
+                         + (f" · 需人工 {ns['manual']}" if ns.get("manual") else "")
+                         + (f" · 失败 {ns['error']}" if ns.get("error") else "")
+                         + "。<b>未命中不等于新漏洞</b>，只说明按函数名/路由名在 NVD 里查不到。</div>")
+            elif b.get("novelty_error"):
+                L.append(f"<div class='warn small'>新颖性核对没跑成：{e(b['novelty_error'])}</div>")
 
     # 第四层
     if res.get("agent") and not res.get("agent_rows"):
@@ -301,9 +330,62 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
 
 # ---------------------------------------------------------------- 主流程
 
+def _novelty(chains: list[dict], endpoints: list[dict], ctx: list[str],
+             source: str = "auto") -> dict | None:
+    """对保留的链做新颖性核对（函数名 + 路由名双路查 CVE 库）。
+
+    这一步原来是独立的 `fwmap verify` 命令，跑完一条命令的人根本不会记得再跑一次，
+    报告里就永远缺「这是不是别人已经报过」这一栏。接到 triage 里之后，
+    一条命令出来的报告自带这个结论。
+    """
+    from . import verify
+
+    kept = [c for c in chains if c.get("verdict", "keep") == "keep"]
+    if not kept:
+        return None
+    searcher, info = verify.open_backend(source=source)
+    if searcher is None:
+        return None
+    delay = 6.5 if info.get("kind") == "api" else 0.0
+    fn_routes = verify.routes_by_function(endpoints or [])
+    rows: list[dict] = []
+    cache: dict[str, dict] = {}
+    try:
+        for c in kept:
+            fn = c.get("function") or ""
+            if not fn:
+                continue
+            # 同一个函数常常出好几条链（不同汇/不同参数），只查一次
+            if fn not in cache:
+                try:
+                    cache[fn] = verify.judge_function(
+                        fn, fn_routes.get(fn, []), {}, False, delay, False,
+                        searcher=searcher, context=ctx)
+                except Exception as ex:                      # noqa: BLE001
+                    cache[fn] = {"function": fn, "verdict": "error", "matched": [],
+                                 "note": f"查询失败：{str(ex)[:60]}", "confidence": ""}
+                rows.append(cache[fn])
+            r = cache[fn]
+            c["novelty"] = {
+                "verdict": r["verdict"],
+                "confidence": r.get("confidence", ""),
+                "note": r["note"],
+                "cves": [{"id": m.get("id"), "published": m.get("published", "")}
+                         for m in (r.get("matched") or [])[:6]],
+            }
+    finally:
+        if info.get("index"):
+            info["index"].close()
+    summary = {k: sum(1 for r in rows if r["verdict"] == k)
+               for k in ("known", "unknown", "manual", "error")}
+    return {"rows": rows, "summary": summary,
+            "backend": {k: v for k, v in info.items() if k != "index"}}
+
+
 def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None,
            use_agent: bool = False, top_chains: int = 8, samples: int = 3,
-           force: bool = False, use_auth: bool = True, log=print) -> dict:
+           force: bool = False, use_auth: bool = True, use_verify: bool = True,
+           context: str = "", log=print) -> dict:
     os.makedirs(outdir, exist_ok=True)
     t0 = time.time()
 
@@ -313,7 +395,7 @@ def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None
 
     out = {"rootfs": os.path.abspath(rootfs), "time": time.strftime("%Y-%m-%d %H:%M"),
            "agent": use_agent, "binaries": []}
-    total_chains = total_kept = 0
+    total_chains = total_kept = total_known = 0
     for i, t in enumerate(cands, 1):
         log(f"[2/4] {i}/{len(cands)} {t.rel_path}  —  M2 …")
         b = {"path": t.rel_path, "score": t.score, "role": t.role,
@@ -358,6 +440,22 @@ def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None
                 b["agent_rows"] = _agent(t.abs_path, m3["chains"], top_chains, samples)
             except Exception as ex:                          # noqa: BLE001
                 b["agent_error"] = str(ex)
+
+        if use_verify:
+            ctx = [c.strip().lower() for c in (context or "").split(",") if c.strip()]
+            log("        新颖性核对（函数名 + 路由名查 CVE 库）…")
+            try:
+                nov = _novelty(m3["chains"], b.get("endpoint_list") or [], ctx)
+                if nov:
+                    b["novelty_summary"] = nov["summary"]
+                    b["novelty_backend"] = nov["backend"]
+                    total_known += nov["summary"]["known"]
+                    log("        已公开 {known} · 未命中 {unknown} · 需人工 {manual}".format(
+                        **nov["summary"]))
+                else:
+                    b["novelty_error"] = "没有可核对的链或没有可用检索源"
+            except Exception as ex:                          # noqa: BLE001
+                b["novelty_error"] = str(ex)[:200]
         out["binaries"].append(b)
 
     rows = []
@@ -369,10 +467,12 @@ def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None
                        for b in out["binaries"])
     out["stats"] = {
         "oneline": (f"{len(cands)} 个二进制、{total_chains} 条候选链、保留 {total_kept} 条"
+                    + (f"，其中 {total_known} 条对应的函数已出现在公开 CVE 里" if total_known else "")
                     + (f"，LLM 复核 {len(rows)} 条里 {conf} 条 CONFIRMED" if rows else "")
                     + (f"，未鉴权端点候选 {unprot_total} 个" if unprot_total else "")
                     + "。CONFIRMED 仍需人工核对后才能叫漏洞。"),
         "confirmed": conf, "kept": total_kept, "chains": total_chains,
+        "known": total_known,
         "unprotected": unprot_total,
         "elapsed": round(time.time() - t0, 1),
     }
