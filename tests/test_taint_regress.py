@@ -78,6 +78,17 @@ def main() -> int:
     ok &= check("带函数名的块尾也认", m3flow._parse_decompile_output(out2) == {"sub_x": "q = 1;"},
                 m3flow._parse_decompile_output(out2))
 
+    # 7) Ghidra 会给脚本输出加日志前缀（和 "(GhidraScript)" 后缀），
+    #    不剥干净就整块丢失 —— 曾把数据流跑成 0 条链
+    out3 = "\n".join([
+        "INFO  DecompileFuncs.java> ===== formFoo @ 00401000 ===== (GhidraScript)",
+        "INFO  DecompileFuncs.java> C| int a = 1;",
+        "INFO  DecompileFuncs.java> ===== END ===== (GhidraScript)",
+    ])
+    ok &= check("带 Ghidra 日志前后缀也能解析",
+                m3flow._parse_decompile_output(out3) == {"formFoo": "int a = 1;"},
+                m3flow._parse_decompile_output(out3))
+
     print()
     print("PASS（污点引擎回归）" if ok else "FAIL")
     return 0 if ok else 1

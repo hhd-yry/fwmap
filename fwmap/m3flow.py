@@ -922,27 +922,42 @@ def decompile(ghidra_home: str, binary: str, targets: list[str], timeout: int | 
     return _parse_decompile_output(out)
 
 
+_GHIDRA_PREFIX = re.compile(r"^(?:INFO|WARN|ERROR|DEBUG)\s+\S+>\s?")
+
+
 def _parse_decompile_output(out: str) -> dict[str, str]:
     """把 DecompileFuncs.java 的输出切成 {函数名: C 源码}。
 
     块头 "===== <函数名> @ <地址> ====="，块尾 "===== END ====="。
     不能只用 "END" in line 判断块头 —— 函数名里带 END（SEND_RESPONSE、APPEND*）
     的整块会被当成结束标记丢掉，表现为「这函数一条链都没有」，其实是没分析。
+
+    另一个坑：Ghidra 会把脚本的 println 打上日志前缀（`INFO DecompileFuncs.java> `），
+    不剥掉的话任何基于行首的判断都会失效（改成 startswith("=====") 那次就因此
+    把整条数据流跑成了 0 条链）。
     """
     blocks: dict[str, str] = {}
     cur, buf = None, []
     for line in out.splitlines():
-        s = line.strip()
-        if s.startswith("=====") and s.endswith("=====") and len(s) > 10:
-            inner = s[5:-5].strip()
-            if inner == "END" or inner.startswith("END "):
-                if cur:
-                    blocks[cur] = "\n".join(buf)
-                    cur = None
-                continue
-            if " @ " in inner:
-                cur, buf = inner.split(" @ ")[0].strip(), []
-                continue
+        m = _GHIDRA_PREFIX.match(line)
+        if m:
+            line = line[m.end():]
+        # 头行真实长相：`===== <name> @ <addr> ===== (GhidraScript)`
+        # 前后都可能挂东西，所以取两个 "=====" 之间的内容，不做 startswith/endswith。
+        s = line
+        i = s.find("=====")
+        if i >= 0:
+            j = s.find("=====", i + 5)
+            if j > i:
+                inner = s[i + 5:j].strip()
+                if inner == "END" or inner.startswith("END "):
+                    if cur:
+                        blocks[cur] = "\n".join(buf)
+                        cur = None
+                    continue
+                if " @ " in inner:
+                    cur, buf = inner.split(" @ ")[0].strip(), []
+                    continue
         k = line.find("C| ")
         if k >= 0 and cur is not None:
             buf.append(line[k + 3:])
