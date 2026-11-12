@@ -33,6 +33,7 @@
 - **零配置迁移**：Ghidra、模型、依赖均支持「环境变量 → 常见路径 → 包内相对路径」三级回退；`fwmap setup` 可自动安装 Ghidra 与 JDK。
 - **一键自检**：`fwmap doctor` 输出环境检查表。
 - **新颖性核对**：`fwmap verify` 按「函数名 + 路由名」双路检索 NVD，自动判断线索是否已被公开报告。
+- **断网可用**：`fwmap nvd` 把 NIST 官方 CVE 全量数据（2002 至今，42 万条）建成离线库；`verify` 有网走 API、没网查本地，结论一致。
 
 ---
 
@@ -86,6 +87,13 @@ python -m fwmap setup              # 安装 Ghidra + JDK（约 700 MB）
 python -m fwmap doctor --agent     # 环境自检
 ```
 
+断网机器还要准备离线 NVD 库（否则 `verify` 只能联网用）：
+
+```bash
+python -m fwmap nvd fetch          # 下载官方年包（约 240 MB）
+python -m fwmap nvd build          # 建索引（约 90 秒）
+```
+
 > **Windows 提示**：若 `python` 指向旧版本（例如 Anaconda 2.x），请改用 `py -3.13 -m fwmap`；
 > 也可直接使用 `fwmap.cmd`，它会自动切换工作目录并设置编码，可从任意路径调用。
 
@@ -135,11 +143,34 @@ python -m fwmap verify out/3_m3.flow.json --m2 out/2_m2.json --dry-run
 **实测**：`formDLNAserver` 按函数名查不到任何记录；按路由名 `SetDlnaCfg` 一查即命中
 **CVE-2024-10661**，描述中的版本号 `15.03.05.19` 与目标完全一致。
 
+### 数据源：有网走 API，没网用本地库
+
+`--source auto`（默认）会先探一下网络：**通就用 NVD 在线 API，不通就退回本地的
+离线 NVD 库**，两边判定逻辑完全一样。有网时加 `--update-index`，跑完顺手把本地库
+刷到最新 —— 这样下次断网还有新数据可用。
+
+```bash
+python -m fwmap nvd fetch && python -m fwmap nvd build   # 建离线库（一次性，约 240 MB / 90 秒）
+python -m fwmap nvd update                               # 有网时增量更新：只下变了的年包
+python -m fwmap verify ... --update-index                # 核对完顺手更新
+python -m fwmap verify ... --source local                # 强制离线
+```
+
+| | 在线 API | 离线库 |
+|---|---|---|
+| 网络 | 必须 | 不需要 |
+| 用时（15 个函数） | ~97 s（限流 5 次 / 30 秒） | **2.6 s** |
+| 可复现 | 否 | 是（报告写明快照日期） |
+| 结论 | 9 已公开 / 6 未命中 | 完全一致 |
+
+详见 [`docs/离线NVD.md`](docs/离线NVD.md)。
+
 > **`unknown` 不等于新漏洞。** 它只说明按这个名字在 NVD 里查不到；大量固件漏洞从未申请 CVE，
 > 或公告只写型号和 URL。结论必须人工复核。
 >
-> NVD 无 API key 时限流约 5 次 / 30 秒，本命令默认间隔 6.5 秒并把结果缓存 7 天
+> 在线模式下 NVD 无 API key 时限流约 5 次 / 30 秒，本命令默认间隔 6.5 秒并把结果缓存 7 天
 > （`~/.fwmap/nvd-cache.json`），重复核对不会重复请求。
+
 
 ---
 
@@ -243,7 +274,8 @@ fwmap-tool/
 | `m3` | 源/汇提取与数据流分析 |
 | `agent` | 对已有链运行 LLM 复核 |
 | `triage` | 串联四层，生成 HTML 报告 |
-| `verify` | 新颖性核对：函数名 + 路由名双路检索 NVD |
+| `verify` | 新颖性核对：函数名 + 路由名双路检索（有网走 API，没网用离线库） |
+| `nvd` | 离线 NVD 索引：`fetch` / `build` / `update` / `check` / `status` / `search` |
 | `check` | 校验 rootfs 解包完整性 |
 | `doctor` | 环境自检 |
 | `setup` | 安装 / 校验 Ghidra 与 JDK |

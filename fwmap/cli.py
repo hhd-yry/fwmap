@@ -212,16 +212,53 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--agent", action="store_true", help="连本地模型一起检查")
     d.set_defaults(func=cmd_doctor)
 
-    v = sub.add_parser("verify", help="新颖性核对：按函数名 + 路由名查 NVD")
+    v = sub.add_parser("verify", help="新颖性核对：按函数名 + 路由名查 CVE 库")
     v.add_argument("input", help="m3 --flow 的 flow.json，或 triage 的 report.json")
     v.add_argument("--m2", help="端点映射（输入是 flow.json 时需要）")
     v.add_argument("--out", "-o", help="输出 markdown（默认 <输入>.verify.md）")
+    v.add_argument("--source", choices=["auto", "api", "online", "local"], default="auto",
+                   help="检索源：auto=有网走 API、断网用离线库（默认）；api=强制联网；local=强制离线")
+    v.add_argument("--db", help="离线库路径（默认 包目录/data/nvd/nvd.sqlite）")
+    v.add_argument("--no-scan", action="store_true",
+                   help="离线模式只做整词匹配，跳过子串兜底扫描（快，但可能漏）")
+    v.add_argument("--update-index", action="store_true",
+                   help="走完 API 后顺手把离线库刷到最新（只下变了的年包）")
     v.add_argument("--limit", type=int, default=0, help="只核对前 N 个函数")
     v.add_argument("--only", help="只核对函数名包含该子串的")
-    v.add_argument("--delay", type=float, default=6.5, help="请求间隔秒（NVD 无 key 有限流）")
-    v.add_argument("--refresh", action="store_true", help="忽略缓存重新查询")
+    v.add_argument("--delay", type=float, default=6.5, help="在线模式的请求间隔秒（NVD 无 key 有限流）")
+    v.add_argument("--refresh", action="store_true", help="忽略缓存重新查询（仅在线模式）")
     v.add_argument("--dry-run", action="store_true", help="只列出关键词，不发请求")
     v.set_defaults(func=lambda a: __import__("fwmap.verify", fromlist=["run"]).run(a))
+
+    nv = sub.add_parser("nvd", help="离线 NVD 索引：下载 / 建索引 / 查询（断网验收靠它）")
+    nsub = nv.add_subparsers(dest="nvd_cmd")
+
+    def _nvd_dir(p):
+        p.add_argument("--dir", "-d", help="索引目录（默认 包目录/data/nvd）")
+        return p
+
+    nf = _nvd_dir(nsub.add_parser("fetch", help="下载 NIST 官方 CVE feed（约 240 MB）"))
+    nf.add_argument("--from-year", dest="from_year", type=int, help="起始年份（默认 2002）")
+    nf.add_argument("--to-year", dest="to_year", type=int, help="结束年份（默认今年）")
+    nf.add_argument("--proxy", help="HTTP 代理，如 http://127.0.0.1:7897")
+
+    _nvd_dir(nsub.add_parser("build", help="把年包合成 nvd.sqlite"))
+    nu = _nvd_dir(nsub.add_parser("update", help="有网时增量更新：只下变了的年包，再重建"))
+    nu.add_argument("--from-year", dest="from_year", type=int, help="从哪年起查（默认 2002）")
+    nu.add_argument("--proxy", help="HTTP 代理，如 http://127.0.0.1:7897")
+
+    nc = _nvd_dir(nsub.add_parser("check", help="只看有没有新数据，不下载"))
+    nc.add_argument("--from-year", dest="from_year", type=int)
+    nc.add_argument("--proxy")
+
+    ns = _nvd_dir(nsub.add_parser("search", help="手工查一个关键词"))
+    ns.add_argument("keywords", nargs="+")
+    ns.add_argument("--limit", type=int, default=40)
+    ns.add_argument("--db")
+    ns.add_argument("--no-scan", action="store_true")
+
+    _nvd_dir(nsub.add_parser("status", help="索引状态（条数 / 快照日期 / 大小）"))
+    nv.set_defaults(func=lambda a: __import__("fwmap.nvd", fromlist=["run"]).run(a))
 
     st = sub.add_parser("setup", help="下载安装 Ghidra / JDK（换机器后先跑这个）")
     st.add_argument("--ghidra", action="store_true", help="只装 Ghidra")
@@ -270,10 +307,10 @@ def cmd_doctor(args) -> int:
     root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
     ok_all = True
 
-    def line(name, ok, detail=""):
+    def line(name, ok, detail="", soft=False):
         nonlocal ok_all
-        mark = "[OK]  " if ok else "[MISS]"
-        if not ok:
+        mark = "[OK]  " if ok else ("[WARN]" if soft else "[MISS]")
+        if not ok and not soft:
             ok_all = False
         print(f"{mark} {name:<10} {detail}")
 
@@ -301,6 +338,25 @@ def cmd_doctor(args) -> int:
                             jdk_ver = ln.split("=", 1)[1].strip().strip('"')
                 break
     line("JDK", bool(jdk_dir), f"{jdk_ver}  {jdk_dir}" if jdk_dir else "没找到（setup 会装 Temurin 25）")
+
+    # 离线 NVD 库：断网机器上 verify 全靠它，没有就明确报出来
+    try:
+        from .nvd import Index, find_db
+
+        nd = find_db()
+        if nd:
+            _i = Index(nd)
+            try:
+                line("离线NVD", True,
+                     f"{_i.count} 条 CVE，快照 {_i.built_at}，"
+                     f"{_os.path.getsize(nd)/1048576:.0f} MB  {nd}")
+            finally:
+                _i.close()
+        else:
+            line("离线NVD", False,
+                 "没有（verify 会回退联网；断网机器要跑 nvd fetch + nvd build）")
+    except Exception as _e:                              # noqa: BLE001
+        line("离线NVD", False, f"打不开：{_e}")
 
     if getattr(args, "agent", False):
         from .agent.llm import find_model

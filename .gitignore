@@ -11,6 +11,14 @@ tools/
 *.log
 *.zip
 
+# 离线 NVD 数据：236 MB 原始年包 + 259 MB 索引，不进版本库
+# （代码进 git，数据跟着文件夹走；新机器上用 `fwmap nvd fetch/build` 重建）
+data/nvd/raw/
+data/nvd/*.sqlite
+data/nvd/*.sqlite.part
+data/nvd/*.sqlite-journal
+data/nvd/*.sqlite-wal
+
 # 编辑器
 .vscode/
 .idea/

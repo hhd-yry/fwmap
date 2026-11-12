@@ -45,6 +45,19 @@ def main() -> int:
     r = verify.judge_function("FUN_000a88a4", [], {}, refresh=False, delay=0, dry=False)
     ok &= check("FUN_xxxx → manual", r["verdict"] == "manual", r["verdict"])
 
+    # 2b) inventory 策略：没有 handler_name，用 refs 里的函数名兜底
+    eps2 = [
+        {"uri": "/goform/formStaDrvSetup", "handler_name": "",
+         "refs": [{"in": "formStaDrvSetup"}]},
+        {"uri": "/index.asp", "handler_name": "", "refs": [{"in": "formFoo"}]},
+        {"uri": "/goform/GetXYZ", "handler_name": "",
+         "refs": [{"in": "FUN_0001"}]},
+    ]
+    m2 = verify.routes_by_function(eps2)
+    ok &= check("refs 兜底出路由", m2.get("formStaDrvSetup") == ["formStaDrvSetup"], m2)
+    ok &= check("通用页面 /index.asp 不挂路由", "formFoo" not in m2, m2)
+    ok &= check("FUN_ 名字不挂路由", "FUN_0001" not in m2, m2)
+
     # 4) 函数名查不到、路由名查到 → known（这是 CVE-2024-10661 的真实情形）
     calls = []
 
