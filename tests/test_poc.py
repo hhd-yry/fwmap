@@ -37,6 +37,12 @@ CHAIN = {
 }
 
 
+def native_rt(exe: str) -> dict:
+    """用一个 Python 解释器当「运行时」，跑脚本形式的假服务。"""
+    return {"label": "native", "prefix": [sys.executable], "env": {},
+            "exe": exe, "cwd": os.path.dirname(exe)}
+
+
 def free_port() -> int:
     """拿一个当前空闲的端口：写死端口在反复跑测试时会撞上 TIME_WAIT 里的旧监听。"""
     s = socket.socket()
@@ -94,9 +100,9 @@ def main() -> int:
     ok &= check("有 Content-Length", b"Content-Length:" in raw)
 
     # 2) 运行时探测：架构不匹配时不能返回 native
-    label, _, _ = dyn.find_runtime("mips", None)
-    ok &= check("没有 qemu 时 mips → 无运行时", label is None or label.startswith("qemu"),
-                label)
+    rt = dyn.find_runtime("mips", None, "x")
+    ok &= check("没有 qemu 时 mips → 无运行时", rt is None or "qemu" in rt["label"],
+                rt)
 
     # 3) 真跑：崩 / 不崩 / 没起来
     py = sys.executable
@@ -108,7 +114,7 @@ def main() -> int:
         port = free_port()
         srv = fake_server(mode, port)
         req = poc.build_requests(chain, {"uri": "/x"}, port=port)[-1]   # 最长的一档
-        res = dyn.run_request(req, srv, ("native", [py], {}), timeout=6)
+        res = dyn.run_request(req, native_rt(srv), timeout=6)
         ok &= check(f"{mode} 场景判成 {want}", res["status"] == want, res)
 
     # 服务起不来（脚本直接报错退出）→ no-listener，绝不能是 no-crash
@@ -116,7 +122,7 @@ def main() -> int:
     with open(dead, "w", encoding="utf-8") as fh:
         fh.write("raise SystemExit(3)\n")
     req = poc.build_requests(CHAIN, {"uri": "/x"}, port=free_port())[0]
-    res = dyn.run_request(req, dead, ("native", [py], {}), timeout=3, ready_timeout=1.5)
+    res = dyn.run_request(req, native_rt(dead), timeout=3, ready_timeout=1.5)
     ok &= check("服务没起来 → no-listener（不是 no-crash）",
                 res["status"] == "no-listener", res)
 

@@ -84,6 +84,20 @@ def build_requests(chain: dict, endpoint: dict | None = None,
     return out
 
 
+def control_request(port: int = 80, host: str = "127.0.0.1") -> dict:
+    """对照组请求：一个绝对无害的 GET /。
+
+    为什么必须有它：固件在模拟器里常常因为缺 NVRAM、缺 /dev、缺配置而**一请求就崩**。
+    如果不先打一发无害请求做对照，那种崩溃会被当成「我们打出了漏洞」——
+    这是动态验证最容易出的假阳性，也是最难向别人解释的那种。
+    """
+    return {"function": "<control>", "sink": "", "sink_category": "",
+            "param": "", "value": "", "path": "/", "method": "GET",
+            "host": host, "port": port,
+            "headers": {"Host": host, "Connection": "close"},
+            "body": "", "desc": "对照组：无害请求"}
+
+
 def render_http(req: dict) -> bytes:
     """渲染成可以直接 write 到 socket 的字节串。"""
     lines = [f"{req['method']} {req['path']} HTTP/1.1"]

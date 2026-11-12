@@ -1,7 +1,7 @@
 # fwmap dyn · 动态验证
 
 - 目标：`C:\deepseek\fw\p5\root\bin\webs`
-- 架构 / 运行时：MIPS / 无（未执行）
+- 架构 / 运行时：mipsel / 无（未执行）
 - 端口：8080
 
 > `no-listener` 表示服务没起来，**不是**「没有漏洞」；
