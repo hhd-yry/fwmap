@@ -309,6 +309,21 @@ def main(argv: list[str] | None = None) -> int:
     bf.add_argument("-o", "--out", help="输出 markdown")
     bf.set_defaults(func=lambda a: __import__("fwmap.exploit", fromlist=["run"]).run(a))
 
+    ap = sub.add_parser("autopilot", help="智能体：自己决定调哪个工具，一路跑到结论")
+    ap.add_argument("rootfs", help="解包后的 rootfs 目录")
+    ap.add_argument("--binary", help="直接指定目标 ELF（不指定就先 scan 选）")
+    ap.add_argument("--limit", type=int, default=20, help="M3 最多分析多少函数（默认 20）")
+    ap.add_argument("--port", type=int, default=80, help="动态验证端口（默认 80）")
+    ap.add_argument("--context", help="目标厂商/型号关键词，逗号分隔")
+    ap.add_argument("--max-steps", type=int, default=8, help="最多走几步（默认 8）")
+    ap.add_argument("--skip-ghidra", action="store_true",
+                    help="跳过 M2/M3，只做不依赖 Ghidra 的步骤")
+    ap.add_argument("-o", "--out", help="把调查日志写成 JSON")
+    ap.set_defaults(func=lambda a: __import__("fwmap.planner", fromlist=["run"]).run(a))
+
+    tl = sub.add_parser("tools", help="列出智能体能调用的工具（名字 / 用途 / 参数）")
+    tl.set_defaults(func=cmd_tools)
+
     st = sub.add_parser("setup", help="下载安装 Ghidra / JDK（换机器后先跑这个）")
     st.add_argument("--ghidra", action="store_true", help="只装 Ghidra")
     st.add_argument("--jdk", action="store_true", help="只装 JDK")
@@ -348,6 +363,19 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+def cmd_tools(args) -> int:
+    """打印工具注册表 —— 让人和被调用的模型都知道手上有什么。"""
+    from .tools_api import catalog
+
+    cat = catalog()
+    print(f"可调用工具 {len(cat)} 个：")
+    for t in cat:
+        print(f"\n  {t['name']}\n    {t['desc']}")
+        for k, v in (t["args"] or {}).items():
+            print(f"      - {k}: {v}")
+    return 0
+
 
 def cmd_doctor(args) -> int:
     """把「换一台机器能不能跑」这件事变成一条命令。"""
