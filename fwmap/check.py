@@ -52,6 +52,7 @@ def check(root: str, max_files: int = 200_000) -> dict:
     weak_archives: list[str] = []
     has_init = False
     total_size = 0
+    zero_exec = 0
 
     from .elf import ELFError, read_elf
 
@@ -71,6 +72,8 @@ def check(root: str, max_files: int = 200_000) -> dict:
                 continue
             total_size += size
             low = rel.lower()
+            if size == 0 and low.startswith(("bin/", "sbin/", "usr/bin/", "usr/sbin/")):
+                zero_exec += 1
             if low.endswith(STRONG_EXT):
                 strong_archives.append(rel)
             elif low.endswith(WEAK_EXT) and size > 1024 * 1024 \
@@ -130,6 +133,16 @@ def check(root: str, max_files: int = 200_000) -> dict:
 
     if elfs and stripped == elfs:
         res["warnings"].append("所有 ELF 都被 strip 了——后续反编译只能靠启发式恢复函数名")
+
+    # bin 下的 0 字节文件：几乎一定是符号链接在解包时丢了。
+    # 固件里 /bin/sh、/bin/echo 这类通常是 busybox 的软链接，丢了之后
+    # 二进制里的 system() 一调用就 ENOEXEC —— 动态验证会全盘失败，
+    # 而且症状极像「服务没跑起来」，很难往解包上想。
+    if zero_exec >= 5:
+        res["issues"].append(
+            f"{zero_exec} 个 bin/sbin 下的文件是 0 字节——符号链接大概率在解包时丢了"
+            "（在 Windows 上解 squashfs 的典型症状）。这些通常是 busybox 的软链接，"
+            "丢了会让 system() 全部 ENOEXEC。请在 Linux 上用 unsquashfs 重新解包。")
 
     res["ok"] = not res["issues"]
     return res
