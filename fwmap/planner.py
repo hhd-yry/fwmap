@@ -42,6 +42,13 @@ def decide(state: dict) -> dict | None:
                     "why": "还没选目标，先按攻击面排序"}
         return None
 
+    # 外部工具优先跑一次：既验证了「融合」这条链，也把对方的结果纳入决策。
+    done = state.setdefault("plugins_done", set())
+    pending = [p for p in (state.get("plugins") or []) if p not in done]
+    if pending:
+        return {"tool": pending[0], "kwargs": {"target": state["rootfs"]},
+                "why": f"调外部工具 {pending[0]}（融合的关键：能调别人做的东西）"}
+
     if state.get("skip_ghidra"):
         if not state.get("verified"):
             chains = state.get("chains") or []
@@ -80,12 +87,18 @@ def decide(state: dict) -> dict | None:
 
 def autopilot(rootfs: str, binary: str | None = None, limit: int = 20,
               port: int = 80, context: str = "", max_steps: int = 8,
-              skip_ghidra: bool = False, log=print) -> dict:
+              skip_ghidra: bool = False, plugins: list[str] | None = None,
+              log=print) -> dict:
     state = {
         "rootfs": os.path.abspath(rootfs), "binary": binary, "limit": limit,
         "port": port, "context": context, "skip_ghidra": skip_ghidra,
         "chains": [], "targets": [], "unknown_fns": [], "history": [],
+        "plugins": [], "plugins_done": set(),
     }
+    if plugins:
+        from . import plugins as P
+
+        state["plugins"] = P.load(plugins, log)
     t0 = time.time()
     log(f"[autopilot] 目标 rootfs：{state['rootfs']}")
     if skip_ghidra:
@@ -128,6 +141,8 @@ def _absorb(state: dict, tool: str, res: dict) -> None:
         state["verify_stat"] = res.get("summary_stat") or {}
     elif tool == "dyn":
         state["dyn_tried"] = True
+    elif tool.startswith("plugin."):
+        state.setdefault("plugins_done", set()).add(tool)
 
 
 def _report(state: dict, elapsed: float) -> dict:
@@ -168,7 +183,8 @@ def run(args, log=print) -> int:
     res = autopilot(args.rootfs, binary=args.binary, limit=args.limit,
                     port=args.port, context=args.context or "",
                     max_steps=args.max_steps,
-                    skip_ghidra=getattr(args, "skip_ghidra", False), log=log)
+                    skip_ghidra=getattr(args, "skip_ghidra", False),
+                    plugins=getattr(args, "plugin", None), log=log)
     print()
     for ln in res["lines"]:
         print("  " + ln)

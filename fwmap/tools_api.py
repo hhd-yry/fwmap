@@ -188,5 +188,6 @@ def _bof(binary: str, rootfs: str) -> dict:
 def run_cli(args: list[str], timeout: int = 1800) -> tuple[int, str]:
     """需要完整功能时，退回命令行调用（保证和手工跑完全一致）。"""
     cmd = [sys.executable, "-m", "fwmap"] + args
-    p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    p = subprocess.run(cmd, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=timeout)
     return p.returncode, (p.stdout or "") + (p.stderr or "")

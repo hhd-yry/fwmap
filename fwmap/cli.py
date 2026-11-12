@@ -318,6 +318,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-steps", type=int, default=8, help="最多走几步（默认 8）")
     ap.add_argument("--skip-ghidra", action="store_true",
                     help="跳过 M2/M3，只做不依赖 Ghidra 的步骤")
+    ap.add_argument("--plugin", action="append", metavar="PATH",
+                    help="加载外部工具（manifest JSON，或含 json 的目录），可多次指定")
     ap.add_argument("-o", "--out", help="把调查日志写成 JSON")
     ap.set_defaults(func=lambda a: __import__("fwmap.planner", fromlist=["run"]).run(a))
 

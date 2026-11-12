@@ -71,7 +71,57 @@ python -m fwmap tools
 - 规则的决策链路**可解释**，日志里能写清「为什么这一步要跑 verify」；
 - 等链路稳定后，把 `planner.decide()` 换成模型输出即可，接口不用动。
 
-## 5. 还没做的
+## 5. 融合：把别人的工具接进来（插件）
 
-- **融合**：目前只能调自己的工具。要接别的组/别人的工具，需要一个 manifest 插件接口（`--plugin`），让对方不改代码就能注册进来。
-- **模型参与决策**：现在是规则 planner；在 5090 上跑 32B 之后，可以试「模型提议 + 规则兜底」。
+老师说的「两套工具融合」，技术难点不是功能，是**边界**：两套工具各自迭代，
+谁也不想为了合体去改自己的工程。所以这里只约定一件事——**一份 JSON**：
+
+```json
+{
+  "name": "otherscan",
+  "desc": "某某做的端点扫描器",
+  "cmd": ["python", "C:/tools/otherscan.py", "--target", "{target}"],
+  "args": {"target": "解包后的 rootfs 目录"},
+  "output": "json",
+  "timeout": 600
+}
+```
+
+用法：
+
+```bash
+fwmap autopilot <rootfs> --plugin otherscan.json          # 单个
+fwmap autopilot <rootfs> --plugin ./plugins/              # 整个目录
+```
+
+跑起来是这样：
+
+```
+[plugin] 已加载 fake_external：演示用外部工具
+[3] 调外部工具 plugin.fake_external（融合的关键：能调别人做的东西）
+     → 调用 plugin.fake_external
+     ← [外部] fake_external：返回对象（n=3、msg=中文输出、files=1030）
+```
+
+对方仍然是**一个普通命令行程序**，可以独立运行、独立发版；
+我们只负责替换参数、起进程、收输出、压成摘要塞回注册表。
+
+### 三个约束（和内置工具一致）
+
+| 约束 | 原因 |
+|---|---|
+| 只回摘要 | 外部工具可能吐几十 MB，`data` 里只留标量字段，实测 < 500 字节 |
+| 失败结构化 | 超时 / 非零退出 / 坏 JSON 都变成 `{ok: False, summary: "退出码 3：boom"}` |
+| 不猜语义 | 摘要只写「跑出来了 / 多少条 / 前几项」，不做价值判断 |
+
+### 一个踩到的坑
+
+Windows 上 `subprocess.run(text=True)` 默认按 **GBK** 解码子进程输出，
+外部工具一输出中文就 `UnicodeDecodeError`，而且报在读取线程里，极难定位。
+现在显式指定 `encoding="utf-8", errors="replace"`。
+
+## 6. 还没做的
+
+- **模型参与决策**：现在是规则 planner；5090 上跑 32B 之后可以试「模型提议 + 规则兜底」。
+- **插件结果的合并**：现在外部工具的结果只进日志，还没有和我们的链做交叉验证
+  （比如对方报的端点 vs 我们报的端点，取并集/差集）。
