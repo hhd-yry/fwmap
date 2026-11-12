@@ -26,11 +26,27 @@ from .scan import scan
 
 # ---------------------------------------------------------------- 每层
 
+_PROFILE_END = "# end-of-profile\n"
+
+
 def _profile_for(binary: str, force: bool = False) -> str:
-    """归纳出 profile（带缓存）。阈值按大小自适应，见 m3.py 里的说明。"""
+    """归纳出 profile（带缓存）。阈值按大小自适应，见 m3.py 里的说明。
+
+    两个坑：① 以前直接往 rootfs 里写，写到一半被打断就留下半截文件，
+    而下游只判「文件在不在」就复用 —— 之后所有链会静默变少，且一直缓存下去；
+    ② rootfs 只读时整个 M3 会失败。现在先写临时文件再原子替换，并校验结束标记；
+    真写不进去就返回空串，让 M3 用基础词表照常跑。
+    """
     prof = os.path.splitext(binary)[0] + ".taint.txt"
     if os.path.exists(prof) and not force:
-        return prof
+        try:
+            with open(prof, encoding="utf-8") as fh:
+                tail = fh.readlines()[-1:]
+            if tail and tail[0].strip() == _PROFILE_END.strip():
+                return prof
+        except OSError:
+            pass
+        # 没有结束标记 = 上次被打断了，重建
     size_kb = os.path.getsize(binary) // 1024
     mc, md = (3, 2) if size_kb < 512 else (5, 3)
     rows = induce(binary, min_calls=mc, min_distinct=md)
@@ -39,15 +55,26 @@ def _profile_for(binary: str, force: bool = False) -> str:
         sink_rows = induce_sinks(binary)
     except Exception:                                       # noqa: BLE001
         pass
-    with open(prof, "w", encoding="utf-8") as fh:
-        fh.write("# 由 InduceSources / InduceSinks 归纳，人工复核后再当 source/sink 用\n")
-        for r in rows:
-            sample = r["strings"] or []
-            dotted = sum(1 for s in sample if "." in s)
-            kind = "source-weak" if sample and dotted > len(sample) / 2 else "source-induced"
-            fh.write(f"{kind} {r['api']}\n")
-        for r in sink_rows:
-            fh.write(f"sink-ci-induced {r['api']}\n")
+    tmp = prof + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write("# 由 InduceSources / InduceSinks 归纳，人工复核后再当 source/sink 用\n")
+            for r in rows:
+                sample = r["strings"] or []
+                dotted = sum(1 for s in sample if "." in s)
+                kind = "source-weak" if sample and dotted > len(sample) / 2 else "source-induced"
+                fh.write(f"{kind} {r['api']}\n")
+            for r in sink_rows:
+                fh.write(f"sink-ci-induced {r['api']}\n")
+            fh.write(_PROFILE_END)
+        os.replace(tmp, prof)
+    except OSError:
+        # rootfs 只读之类：不阻断流程，只是这次不带 profile
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return ""
     return prof
 
 

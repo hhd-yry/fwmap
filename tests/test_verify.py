@@ -107,6 +107,58 @@ def main() -> int:
         verify.nvd_search = orig
     ok &= check("dry-run 不发请求", not called, called)
 
+    # 8) 大小写不同不算命中（真实踩过的坑：getInfo 命中 curl/Xen/LuaJIT 的 getinfo）
+    verify.nvd_search = lambda kw, cache, refresh=False: [
+        {"id": "CVE-2026-94266", "desc": "libcurl curl_easy_getinfo() leaks credentials"}]
+    try:
+        r = verify.judge_function("getInfo", [], {}, refresh=False, delay=0, dry=False)
+    finally:
+        verify.nvd_search = orig
+    ok &= check("getinfo（小写）不算命中 → unknown", r["verdict"] == "unknown", r["verdict"])
+    ok &= check("但记下疑似同名", r["weaks"] and r["weaks"][0]["id"] == "CVE-2026-94266",
+                r.get("weaks"))
+
+    verify.nvd_search = lambda kw, cache, refresh=False: [
+        {"id": "CVE-2023-50330", "desc": "boa getInfo functionality of Realtek rtl819x"}]
+    try:
+        r = verify.judge_function("getInfo", [], {}, refresh=False, delay=0, dry=False)
+    finally:
+        verify.nvd_search = orig
+    ok &= check("getInfo（原样大写）算命中 → known", r["verdict"] == "known", r["verdict"])
+
+    # 9) 给了目标上下文，要能标出「同厂商 / 他厂商」
+    verify.nvd_search = lambda kw, cache, refresh=False: [
+        {"id": "CVE-2026-10127",
+         "desc": "Edimax BR-6478AC 1.23 has overflow in formStaDrvSetup"},
+        {"id": "CVE-2026-9999",
+         "desc": "TOTOLINK X2000R has overflow in formStaDrvSetup"}]
+    try:
+        r = verify.judge_function("formStaDrvSetup", [], {}, refresh=False, delay=0,
+                                  dry=False, context=["edimax", "br-6478ac"])
+    finally:
+        verify.nvd_search = orig
+    on = [m["id"] for m in r["matched"] if m.get("on_context")]
+    ok &= check("同厂商标出来", on == ["CVE-2026-10127"], on)
+    ok &= check("置信度=high", r["confidence"] == "high", r["confidence"])
+    ok &= check("说明里写了同厂商条数", "1 条提到目标厂商" in r["note"], r["note"])
+
+    # 10) 查询失败必须报 error，不能落到「未命中」
+    def boom(kw, cache=None, refresh=False):
+        raise RuntimeError("NVD 查询失败：timeout")
+
+    r = verify.judge_function("formX", [], {}, refresh=False, delay=0, dry=False,
+                              searcher=lambda kw: boom(kw))
+    ok &= check("查询失败 → error（不是 unknown）", r["verdict"] == "error", r["verdict"])
+
+    # 11) handlers_of：把 M2 端点表里所有 handler 摊平（补覆盖率用）
+    eps3 = [{"uri": "/goform/A", "handler_name": "formA", "refs": []},
+            {"uri": "/goform/B", "handler_name": "", "refs": [{"in": "formB"}]},
+            {"uri": "/index.asp", "handler_name": "", "refs": [{"in": "write_body"}]},
+            {"uri": "/x.asp", "handler_name": "", "refs": [{"in": "FUN_0001"}]}]
+    hs = verify.handlers_of(eps3)
+    ok &= check("handlers_of 摊平 + 过滤 FUN_/内部例程",
+                hs == ["formA", "formB"], hs)
+
     print()
     print("PASS（verify 路由解析与判定）" if ok else "FAIL")
     return 0 if ok else 1

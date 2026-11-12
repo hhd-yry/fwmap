@@ -68,9 +68,16 @@ def _ctx():
 
 
 # ---------------------------------------------------------------- 输入
+def _read_json(path: str):
+    """读用户给的 JSON。用 utf-8-sig：Windows 上记事本/PowerShell 写出来的文件
+    常带 BOM，用 utf-8 读会直接 JSONDecodeError（实测踩过）。"""
+    with open(path, encoding="utf-8-sig") as fh:
+        return json.load(fh)
+
+
 def load(path: str) -> tuple[list[dict], list[dict]]:
     """读 flow.json 或 triage 的 report.json，返回 (链, 端点)。"""
-    obj = json.load(open(path, encoding="utf-8"))
+    obj = _read_json(path)
     chains: list[dict] = []
     endpoints: list[dict] = []
     if "binaries" in obj:                      # triage report.json
@@ -83,14 +90,43 @@ def load(path: str) -> tuple[list[dict], list[dict]]:
 
 
 def load_m2(path: str) -> list[dict]:
-    obj = json.load(open(path, encoding="utf-8"))
-    return obj.get("endpoints") or []
+    return _read_json(path).get("endpoints") or []
 
 
 def route_name(uri: str) -> str:
     """'/goform/SetDlnaCfg' -> 'SetDlnaCfg'；'/addressNatList.asp' -> 'addressNatList'。"""
     tail = uri.rstrip("/").rsplit("/", 1)[-1]
     return tail.rsplit(".", 1)[0] if "." in tail else tail
+
+
+_HANDLER_NAME = re.compile(r"^(form|webs|web|asp|do|handle|hnd|wsc|upnp)", re.I)
+
+
+def handlers_of(endpoints: list[dict]) -> list[str]:
+    """端点表里出现过的 handler 函数名。
+
+    用途是补覆盖率：M3 只给「连上了链」的函数做核对，没连上的永远轮不到。
+    但只要连不连得上链，跟它是不是 handler 无关，所以这里单独摊一遍。
+
+    `refs` 只说明「谁引用了这个 URL 字符串」，里面混着页面生成器和 Boa 内部例程
+    （`write_body`、`process_header_end`、`OK_MSG`）。这些名字本身很通用，
+    拿去查 NVD 只会命中别的东西，所以只收符合固件 handler 命名习惯的
+    （`form*` / `webs*` / `asp*` / `do*` …），外加 M2 明确解出来的 handler_name。
+    """
+    out: list[str] = []
+
+    def add(f: str) -> None:
+        f = (f or "").strip()
+        if f and not GENERIC.match(f) and f not in out:
+            out.append(f)
+
+    for e in endpoints:
+        add(e.get("handler_name"))
+        for r in e.get("refs") or []:
+            f = (r.get("in") or "").strip()
+            if f and _HANDLER_NAME.match(f):
+                add(f)
+    return out
 
 
 def routes_by_function(endpoints: list[dict]) -> dict[str, list[str]]:
@@ -122,8 +158,10 @@ def routes_by_function(endpoints: list[dict]) -> dict[str, list[str]]:
 
 
 # ---------------------------------------------------------------- NVD
-def _load_cache(refresh: bool) -> dict:
-    if refresh or not os.path.exists(CACHE_PATH):
+def _load_cache(refresh: bool = False) -> dict:
+    # refresh 只表示「忽略 TTL 重新查」，不能把已有缓存丢掉 ——
+    # 否则 --refresh 一次就把之前攒的结果全删了，下次还得按 6.5 秒/次 重新请求。
+    if not os.path.exists(CACHE_PATH):
         return {}
     try:
         return json.load(open(CACHE_PATH, encoding="utf-8"))
@@ -134,7 +172,10 @@ def _load_cache(refresh: bool) -> dict:
 def _save_cache(cache: dict) -> None:
     try:
         os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
-        json.dump(cache, open(CACHE_PATH, "w", encoding="utf-8"), ensure_ascii=False)
+        tmp = CACHE_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(cache, fh, ensure_ascii=False)
+        os.replace(tmp, CACHE_PATH)                 # 原子替换，中断不留半截文件
     except Exception:
         pass
 
@@ -181,19 +222,34 @@ def nvd_search(keyword: str, cache: dict, refresh: bool = False) -> list[dict]:
 
 
 # ---------------------------------------------------------------- 判定
+REQUIRED = re.compile(r"^(form|get|set|webs|web|do|handle|init|main|index|show|proc)", re.I)
+
+
 def judge_function(fn: str, routes: list[str], cache: dict,
                    refresh: bool, delay: float, dry: bool,
-                   searcher=None) -> dict:
+                   searcher=None, context: list[str] | None = None) -> dict:
     """对单个函数做双路检索，返回一行结论。
 
     `searcher(keyword) -> [{'id','desc',...}]` 是检索后端：默认走在线 API，
     离线模式下由 `nvd.Index.search` 提供。判定逻辑对两者完全一样 ——
     换的只是数据从哪来，不是判定标准。
+
+    **为什么要分「大小写完全一致」和「只是字母一样」**：
+    裸做不区分大小写的子串匹配会出灾难性的假阳性 —— 实测 `getInfo` 命中 12 条，
+    全是 `curl_easy_getinfo`、`debug.getinfo`、`xc_cpupool_getinfo`、Linux 内核
+    `get_info`，一条都不是固件里的那个函数。真实的固件漏洞公告会保留 CamelCase
+    （`formStaDrvSetup`、`wiz_5in1_redirect`），所以**大小写一致才算命中**，
+    只有字母序列一样的降级成「疑似同名」，不参与 known 判定。
+
+    `context` 是目标固件的厂商/型号关键词（如 `["edimax", "br-6478ac"]`）。
+    给了它就多算一个「有没有提到目标产品」，用来区分「同一份 SDK 代码在别家固件里
+    也这样写」（合理）和「别的产品恰好有个同名函数」（噪声）。
     """
     if searcher is None:
         def searcher(kw):                      # noqa: E306  延迟绑定，便于测试替换
             return nvd_search(kw, cache, refresh)
 
+    ctx = [c for c in (context or []) if c]
     keywords: list[str] = []
     if not GENERIC.match(fn):
         keywords.append(fn)
@@ -203,48 +259,74 @@ def judge_function(fn: str, routes: list[str], cache: dict,
 
     if not keywords:
         return {"function": fn, "routes": routes, "keywords": [],
-                "verdict": "manual", "matched": [], "related": [],
-                "note": "函数名不可检索（FUN_/sub_），需人工核对"}
+                "verdict": "manual", "matched": [], "related": [], "weaks": [],
+                "confidence": "", "note": "函数名不可检索（FUN_/sub_），需人工核对"}
 
-    matched, related = [], []
+    matched, related, weaks, errs = [], [], [], []
     for kw in keywords:
         if dry:
             continue
         try:
             rows = searcher(kw)
-        except Exception as e:
+        except Exception as e:                     # noqa: BLE001
+            # 不能吞成「没查到」：查询失败和查了没有，对新颖性核对是两回事。
+            errs.append(f"{kw}: {str(e)[:50]}")
             print(f"[!] {kw} 查询失败：{str(e)[:60]}")
-            rows = []
+            continue
         if delay:
             time.sleep(delay)
         low = kw.lower()
         for row in rows:
+            desc = row.get("desc") or ""
             item = dict(row, keyword=kw)
-            if low in row["desc"].lower():
+            if kw in desc:                         # 大小写完全一致：才可能是同一个函数
+                item["match"] = "exact"
+                item["on_context"] = bool(ctx) and any(c in desc.lower() for c in ctx)
                 matched.append(item)
+            elif low in desc.lower():              # 只是字母一样（getinfo / get_info）
+                item["match"] = "loose"
+                weaks.append(item)
             else:
                 related.append(item)
 
-    # 去重
+    # 去重：同一个 CVE 可能被函数名和路由名同时命中
     seen, uniq = set(), []
     for m in matched:
         if m["id"] not in seen:
             seen.add(m["id"])
             uniq.append(m)
 
+    confidence = ""
     if uniq:
         verdict = "known"
-        note = f"命中 {len(uniq)} 条已公开 CVE"
+        if ctx:
+            on = sum(1 for m in uniq if m.get("on_context"))
+            confidence = "high" if on else "medium"
+            note = f"命中 {len(uniq)} 条已公开 CVE（{on} 条提到目标厂商/型号）"
+        else:
+            note = f"命中 {len(uniq)} 条已公开 CVE"
+    elif weaks:
+        verdict = "unknown"
+        note = (f"{len(weaks)} 条只是大小写不同的同名写法"
+                f"（如 getinfo），不算命中")
     elif related:
         verdict = "unknown"
         note = f"关键词有 {len(related)} 条无关命中，但描述里没提到它"
+    elif errs:
+        # 一条都没查成 → 明确报错，绝不能落到「未命中」
+        return {"function": fn, "routes": routes, "keywords": keywords,
+                "verdict": "error", "matched": [], "related": [], "weaks": [],
+                "confidence": "", "note": f"查询失败：{errs[0]}"}
     else:
         verdict = "unknown"
         note = "按函数名/路由名都没查到（不等于新漏洞）"
 
+    if errs and verdict == "known":
+        note += f"（另有 {len(errs)} 个关键词查询失败）"
+
     return {"function": fn, "routes": routes, "keywords": keywords,
             "verdict": verdict, "matched": uniq, "related": related,
-            "note": note}
+            "weaks": weaks[:8], "confidence": confidence, "note": note}
 
 
 # ---------------------------------------------------------------- 渲染
@@ -271,13 +353,19 @@ def to_markdown(rows: list[dict], source: str, backend: dict | None = None) -> s
 
     stat = {k: sum(1 for r in rows if r["verdict"] == k) for k in MARK}
     L.append(f"汇总：已公开 {stat['known']} · 未命中 {stat['unknown']} · 需人工 {stat['manual']}")
+    weak_n = sum(len(r.get("weaks") or []) for r in rows)
+    if weak_n:
+        L.append(f"另有 {weak_n} 条「字母相同但大小写不同」的同名（如 `getinfo`），"
+                 "不计入已公开")
     L.append("")
     L.append("| 函数 | 路由 | 结论 | 说明 |")
     L.append("|---|---|---|---|")
+    CONF = {"high": " · 高", "medium": " · 中"}
     for r in rows:
         fn = r["function"]
         routes = ", ".join(r["routes"][:2]) or "—"
-        L.append(f"| `{fn}` | {routes} | **{MARK[r['verdict']]}** | {r['note']} |")
+        conf = CONF.get(r.get("confidence") or "", "")
+        L.append(f"| `{fn}` | {routes} | **{MARK[r['verdict']]}**{conf} | {r['note']} |")
     L.append("")
 
     known = [r for r in rows if r["verdict"] == "known"]
@@ -288,8 +376,22 @@ def to_markdown(rows: list[dict], source: str, backend: dict | None = None) -> s
             L.append(f"### `{r['function']}`  （关键词：{', '.join(r['keywords'])}）")
             for m in r["matched"][:6]:
                 desc = (m["desc"] or "")[:220].replace("\n", " ")
-                L.append(f"- **{m['id']}**（{m['keyword']}）— {desc}")
+                tag = "【同厂商】" if m.get("on_context") else (
+                    "【他厂商】" if r.get("confidence") else "")
+                L.append(f"- **{m['id']}**（{m['keyword']}）{tag} — {desc}")
             L.append("")
+
+    weak_rows = [r for r in rows if r.get("weaks")]
+    if weak_rows:
+        L.append("## 疑似同名，未计入（大小写不同）")
+        L.append("")
+        L.append("这些是「字母序列一样、但大小写不同」的命中，通常来自"
+                 "`curl_easy_getinfo` / `debug.getinfo` 这类别的产品，**不作为已公开依据**。")
+        L.append("")
+        for r in weak_rows:
+            ids = "、".join(m["id"] for m in r["weaks"][:5])
+            L.append(f"- `{r['function']}` — {ids}")
+        L.append("")
     return "\n".join(L) + "\n"
 
 
@@ -335,7 +437,7 @@ def _make_searcher(args):
             return matched + related
         return local, info
 
-    cache = _load_cache(getattr(args, "refresh", False))
+    cache = _load_cache()
 
     def online(kw):
         rows = nvd_search(kw, cache, getattr(args, "refresh", False))
@@ -345,9 +447,16 @@ def _make_searcher(args):
 
 
 def run(args) -> int:
-    chains, endpoints = load(args.input)
-    if args.m2:
-        endpoints = load_m2(args.m2)
+    try:
+        chains, endpoints = load(args.input)
+        if args.m2:
+            endpoints = load_m2(args.m2)
+    except FileNotFoundError as e:
+        print(f"[!] 找不到输入文件：{e.filename}")
+        return 2
+    except ValueError as e:
+        print(f"[!] 输入不是合法 JSON：{args.input}\n    {str(e)[:120]}")
+        return 2
 
     if not chains:
         print("[!] 输入里没有链（是不是用的 scan 报告？verify 需要 m3 --flow 或 triage 的 report.json）")
@@ -358,6 +467,8 @@ def run(args) -> int:
         return 2
 
     fn_routes = routes_by_function(endpoints)
+    ctx = [c.strip().lower() for c in (getattr(args, "context", None) or "").split(",")
+           if c.strip()]
     # 按函数去重，保留出现次数，用于排序
     order, seen = [], {}
     for c in chains:
@@ -370,6 +481,14 @@ def run(args) -> int:
             seen[fn] = 0
             order.append(fn)
         seen[fn] += 1
+
+    # 覆盖率补丁：数据流没连上链的 handler，默认不会被核对到这里。
+    # 但「新漏洞」恰恰更可能藏在没出链的地方，所以给一个把它们全拉进来的开关。
+    if getattr(args, "all_handlers", False) and endpoints:
+        extra = [f for f in handlers_of(endpoints) if f not in seen]
+        if extra:
+            print(f"[*] 补上 {len(extra)} 个「没出链」的 handler（来自 M2 端点表）")
+        order.extend(extra)
 
     if getattr(args, "only", None):
         order = [fn for fn in order if args.only.lower() in fn.lower()]
@@ -388,6 +507,8 @@ def run(args) -> int:
     print(f"[*] 输入 {os.path.basename(args.input)}：{len(order)} 个函数待核对")
     if endpoints:
         print(f"[*] 路由映射：{len(fn_routes)} 个函数有对应 URL")
+    if ctx:
+        print(f"[*] 目标上下文：{', '.join(ctx)}（命中里提到它的标【同厂商】）")
     if args.dry_run:
         for fn in order:
             kws = ([fn] if not GENERIC.match(fn) else []) + fn_routes.get(fn, [])
@@ -404,10 +525,11 @@ def run(args) -> int:
         t0 = time.time()
         try:
             row = judge_function(fn, routes, {}, args.refresh, delay, False,
-                                 searcher=searcher)
+                                 searcher=searcher, context=ctx)
         except Exception as e:                       # noqa: BLE001
             row = {"function": fn, "routes": routes, "keywords": [],
                    "verdict": "error", "matched": [], "related": [],
+                   "weaks": [], "confidence": "",
                    "note": f"查询失败：{str(e)[:60]}"}
         print(f"{MARK[row['verdict']]:<6} {row['note']}  ({time.time()-t0:.1f}s)")
         rows.append(row)
@@ -416,10 +538,14 @@ def run(args) -> int:
     with open(out_md, "w", encoding="utf-8") as fh:
         fh.write(to_markdown(rows, args.input, backend))
 
-    known = sum(1 for r in rows if r["verdict"] == "known")
+    stat = {k: sum(1 for r in rows if r["verdict"] == k) for k in MARK}
     print()
-    print(f"[+] 已公开 {known} · 未命中 {len(rows) - known}（不等于新漏洞）"
-          f" · 用时 {time.time()-t_all:.1f}s")
+    # 「需人工」和「查询失败」不能混进「未命中」—— 未命中是「查过、没有」，
+    # 另外两个是「压根没查」，混在一起会让人以为检索都跑过了。
+    print(f"[+] 已公开 {stat['known']} · 未命中 {stat['unknown']}（不等于新漏洞）"
+          f" · 需人工 {stat['manual']}"
+          + (f" · 失败 {stat['error']}" if stat["error"] else "")
+          + f" · 用时 {time.time()-t_all:.1f}s")
     print(f"[+] 报告：{out_md}")
     if backend["kind"] == "local" and backend.get("index"):
         idx = backend["index"]

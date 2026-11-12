@@ -158,8 +158,16 @@ def _statements(c_text: str) -> list[str]:
         ch = text[i]
         if in_str:
             buf.append(ch)
-            if ch == '"' and text[i - 1] != "\\":
-                in_str = False
+            # 用「连续反斜杠个数」判断，不能只看前一个字符：
+            # `"C:\\"` 结尾的字符串，闭合引号前一个是 `\`，但它是转义出来的反斜杠，
+            # 引号是真的结束。旧写法会把后面的代码全当成字符串，整个函数吞成 1 条语句。
+            if ch == '"':
+                k, nb = i - 1, 0
+                while k >= 0 and text[k] == "\\":
+                    nb += 1
+                    k -= 1
+                if nb % 2 == 0:
+                    in_str = False
         elif ch == '"':
             in_str = True
             buf.append(ch)
@@ -731,7 +739,11 @@ def analyze_c(func_name: str, addr: str, c_text: str,
         calls = _calls(stmt)
         src_call = next(((n, a) for n, a in calls if n in sources), None)
         sink_call = next(((n, a) for n, a in calls if n in sinks), None)
-        m = _assign(stmt) if calls else None
+        # 赋值识别不能只在「本句有调用」时才做：`x = "CONST";` 没有调用，
+        # 但它会覆盖掉 x 上的旧污点。漏掉这一步，旧污点会活到后面的汇，
+        # 报出 源→汇 的假链（实测：x=websGetVar(); x="CONST"; system(x); 误报）。
+        # 同时 `y = x;` 这种纯别名传播也靠它，之前因为 m 恒为 None 整段是死代码。
+        m = _assign(stmt)
         skip_assign = False
 
         if src_call:
@@ -907,17 +919,30 @@ def decompile(ghidra_home: str, binary: str, targets: list[str], timeout: int | 
     finally:
         shutil.rmtree(run_dir, ignore_errors=True)
 
+    return _parse_decompile_output(out)
+
+
+def _parse_decompile_output(out: str) -> dict[str, str]:
+    """把 DecompileFuncs.java 的输出切成 {函数名: C 源码}。
+
+    块头 "===== <函数名> @ <地址> ====="，块尾 "===== END ====="。
+    不能只用 "END" in line 判断块头 —— 函数名里带 END（SEND_RESPONSE、APPEND*）
+    的整块会被当成结束标记丢掉，表现为「这函数一条链都没有」，其实是没分析。
+    """
     blocks: dict[str, str] = {}
     cur, buf = None, []
     for line in out.splitlines():
-        i = line.find("===== ")
-        if i >= 0 and "END" not in line:
-            cur, buf = line[i + 6:].split(" @ ")[0].strip(), []
-            continue
-        if "===== END" in line and cur:
-            blocks[cur] = "\n".join(buf)
-            cur = None
-            continue
+        s = line.strip()
+        if s.startswith("=====") and s.endswith("=====") and len(s) > 10:
+            inner = s[5:-5].strip()
+            if inner == "END" or inner.startswith("END "):
+                if cur:
+                    blocks[cur] = "\n".join(buf)
+                    cur = None
+                continue
+            if " @ " in inner:
+                cur, buf = inner.split(" @ ")[0].strip(), []
+                continue
         k = line.find("C| ")
         if k >= 0 and cur is not None:
             buf.append(line[k + 3:])

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from .scan import ScanResult
 
@@ -180,17 +181,21 @@ function render(){
 }
 
 function showDetail(t){
-  const L = s => `<li><code>${s}</code></li>`;
+  // 固件里的字符串会原样进 innerHTML。不转义的话，一个含标签的字符串就能在
+  // 打开报告时执行 JS —— 而报告本来就是发给别人看的文件，等于把分析机交给固件作者。
+  const esc = s => String(s).replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const L = s => `<li><code>${esc(s)}</code></li>`;
   const surf = t.signals.filter(s => s.kind !== 'hint');
   const hint = t.signals.filter(s => s.kind === 'hint');
-  const li = s => `<li>${s.label} <span class="k">${s.weight>0?'+':''}${s.weight}</span></li>`;
+  const li = s => `<li>${esc(s.label)} <span class="k">${s.weight>0?'+':''}${s.weight}</span></li>`;
   // M2 结果（可选）：端点清单来自反编译，比 M1 的字符串扫描全得多
   const m2block = t => {
     if (!t.m2 || !t.m2.endpoints || !t.m2.endpoints.length) return '';
     const withH = t.m2.endpoints.filter(e => e.handler).length;
     const rows = t.m2.endpoints.map(e => {
-      const h = e.handler ? ` <span class="k">→ ${e.handler_name || e.handler}</span> <span class="muted">[${e.confidence}]</span>` : '';
-      return `<li>${e.uri}${h}</li>`;
+      const h = e.handler ? ` <span class="k">→ ${esc(e.handler_name || e.handler)}</span> <span class="muted">[${esc(e.confidence)}]</span>` : '';
+      return `<li>${esc(e.uri)}${h}</li>`;
     }).join('');
     return `<h3>M2 端点清单 (${t.m2.endpoints.length}${withH ? ` · ${withH} 个定位到 handler` : ''})</h3>
       <div class="muted" style="margin-bottom:4px">策略：${t.m2.strategy}　清单由反编译得出，比字符串扫描更全；handler 为空表示未能确定，不是不存在</div>
@@ -228,11 +233,16 @@ render();
 
 
 def render_html(res: ScanResult, out_path: str) -> str:
-    payload = json.dumps(res.to_dict(), ensure_ascii=False).replace("</", "<\\/")
+    # 先替换角色表，最后注入数据：反过来的话，固件里只要出现 __ROLE_LABEL__
+    # 这类字面量，数据就会被二次替换，整块 JSON 坏掉、页面白屏。
+    payload = json.dumps(res.to_dict(), ensure_ascii=False)
+    # `</script>` 会提前闭合脚本块；HTML 的结束标签大小写不敏感，
+    # 所以 `</SCRIPT>`、`</Script>` 也要一起转义。
+    payload = re.sub(r"</", r"<\\/", payload)
     html = (HTML
-            .replace("__DATA__", payload)
             .replace("__ROLE_LABEL__", json.dumps(ROLE_LABEL, ensure_ascii=False))
-            .replace("__ROLE_COLOR__", json.dumps(ROLE_COLOR, ensure_ascii=False)))
+            .replace("__ROLE_COLOR__", json.dumps(ROLE_COLOR, ensure_ascii=False))
+            .replace("__DATA__", payload))
     with open(out_path, "w", encoding="utf-8") as fh:
         fh.write(html)
     return out_path

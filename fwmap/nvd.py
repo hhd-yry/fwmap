@@ -576,8 +576,16 @@ class Index:
         self.con = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True)
         self.con.row_factory = sqlite3.Row
         self.meta = {r["k"]: r["v"] for r in self.con.execute("SELECT k,v FROM meta")}
-        self.count = self.con.execute("SELECT COUNT(*) FROM cve")
-        self.count = self.count.fetchone()[0]
+        got = self.meta.get("schema_version")
+        if got and got != str(SCHEMA_VERSION):
+            raise RuntimeError(
+                f"离线库是旧格式（schema {got}，当前 {SCHEMA_VERSION}），"
+                "跑 `python -m fwmap nvd build` 重建")
+        has_fts = self.con.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='ft'").fetchone()
+        if not has_fts:
+            raise RuntimeError("离线库里没有全文索引（ft 表），索引已损坏，请重建")
+        self.count = self.con.execute("SELECT COUNT(*) FROM cve").fetchone()[0]
         self._scans = 0
 
     # -- 元信息
@@ -600,24 +608,20 @@ class Index:
         if not tokens:
             return []
         q = " ".join(f'"{t}"' for t in tokens)
-        try:
-            return self.con.execute(
-                "SELECT c.cve_id,c.published,c.severity,c.score,c.desc"
-                " FROM ft JOIN cve c ON c.id=ft.rowid"
-                " WHERE ft MATCH ? ORDER BY rank LIMIT ?", (q, limit)).fetchall()
-        except sqlite3.Error:
-            return []
+        # 故意不 try/except：库坏了就要报出来。吞成 [] 会让每个函数都显示「未命中」，
+        # 看起来像「查过了、没有公开记录」，其实一条都没查成。
+        return self.con.execute(
+            "SELECT c.cve_id,c.published,c.severity,c.score,c.desc"
+            " FROM ft JOIN cve c ON c.id=ft.rowid"
+            " WHERE ft MATCH ? ORDER BY rank LIMIT ?", (q, limit)).fetchall()
 
     def _like(self, keyword: str, limit: int) -> list[sqlite3.Row]:
         esc = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         self._scans += 1
-        try:
-            return self.con.execute(
-                "SELECT cve_id,published,severity,score,desc FROM cve"
-                " WHERE desc LIKE ? ESCAPE '\\'"
-                " ORDER BY published DESC LIMIT ?", (f"%{esc}%", limit)).fetchall()
-        except sqlite3.Error:
-            return []
+        return self.con.execute(
+            "SELECT cve_id,published,severity,score,desc FROM cve"
+            " WHERE desc LIKE ? ESCAPE '\\'"
+            " ORDER BY published DESC LIMIT ?", (f"%{esc}%", limit)).fetchall()
 
     def search(self, keyword: str, limit: int = 40, deep: bool = True) -> tuple[list, list]:
         """返回 (matched, related)。

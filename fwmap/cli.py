@@ -67,10 +67,18 @@ def cmd_triage(args) -> int:
     def log(m):
         print(m, file=sys.stderr, flush=True)
 
-    triage(args.rootfs, args.outdir, binaries=args.binaries, limit=args.limit,
-           use_agent=args.agent, top_chains=args.top_chains, samples=args.samples,
-           force=args.force, use_auth=not args.no_auth,
-           log=log)
+    out = triage(args.rootfs, args.outdir, binaries=args.binaries, limit=args.limit,
+                 use_agent=args.agent, top_chains=args.top_chains, samples=args.samples,
+                 force=args.force, use_auth=not args.no_auth,
+                 log=log)
+    # 全挂也要有非 0 退出码：否则 CI / 断网验收会把「四层一层都没跑成」当成通过。
+    bins = out.get("binaries") or []
+    dead = [b for b in bins if b.get("error") and not b.get("chain_list")]
+    if bins and len(dead) == len(bins):
+        print("[!] 所有二进制都分析失败，报告里的空结果不代表「没有漏洞」", file=sys.stderr)
+        for b in dead[:3]:
+            print(f"    {b.get('binary')}: {str(b.get('error'))[:100]}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -223,6 +231,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="离线模式只做整词匹配，跳过子串兜底扫描（快，但可能漏）")
     v.add_argument("--update-index", action="store_true",
                    help="走完 API 后顺手把离线库刷到最新（只下变了的年包）")
+    v.add_argument("--context", help="目标厂商/型号关键词，逗号分隔（如 Edimax,BR-6478AC）；"
+                                     "命中里提到它的标【同厂商】")
+    v.add_argument("--all-handlers", action="store_true",
+                   help="把 M2 里所有 handler 都拉进来核对，不只核对出过链的函数")
     v.add_argument("--limit", type=int, default=0, help="只核对前 N 个函数")
     v.add_argument("--only", help="只核对函数名包含该子串的")
     v.add_argument("--delay", type=float, default=6.5, help="在线模式的请求间隔秒（NVD 无 key 有限流）")
