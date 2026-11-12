@@ -752,6 +752,7 @@ public class ExtractHandlers extends GhidraScript {
     }
 
     private String esc(String s) {
-        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"");
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t");
     }
 }
