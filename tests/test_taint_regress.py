@@ -89,6 +89,18 @@ def main() -> int:
                 m3flow._parse_decompile_output(out3) == {"formFoo": "int a = 1;"},
                 m3flow._parse_decompile_output(out3))
 
+    # 7) 定长记录拷贝不算溢出：目标是「数组下标 × 记录大小」，长度也是那个大小
+    v, why = m3flow._rule_check({
+        "sink": "memcpy", "via": "pvVar9", "guard": "", "sink_category": "fmt",
+        "sink_args": "pcVar8 + iVar10 * 0x12,pvVar9,0x12"})
+    ok &= check("定长记录拷贝被降级", v == "demoted" and why == "fixed-record-copy", (v, why))
+
+    # 但「没有数组线索的定长拷贝」仍要留着——不能一刀切放过
+    v2, _ = m3flow._rule_check({
+        "sink": "memcpy", "via": "src", "guard": "", "sink_category": "fmt",
+        "sink_args": "dst,src,0x40"})
+    ok &= check("普通定长拷贝不放过", v2 == "keep", v2)
+
     print()
     print("PASS（污点引擎回归）" if ok else "FAIL")
     return 0 if ok else 1

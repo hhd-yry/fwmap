@@ -582,6 +582,17 @@ def _rule_check(chain: dict) -> tuple[str, str]:
                               or _CONST_LEN.fullmatch(args[2].strip())):
         return "demoted", "bounded-copy"
 
+    # 定长记录拷贝：目标是「数组下标 × 记录大小」，长度正好也是那个记录大小。
+    #     memcpy((void *)(iVar3 * 0x12 + iVar5 + 0x1c04), param_7, 0x12)
+    # 这是往「18 字节一条记录的数组」里放一条记录，不是溢出。
+    # 只认「目标和长度里出现同一个常数」这种强证据，避免把定长小拷贝一律放过——
+    # `memcpy(dst_8, src, 0x40)` 这种没有数组线索的，仍然算危险。
+    if sink in ("memcpy", "memmove", "strncpy") and len(args) >= 3:
+        n = args[2].strip()
+        if _CONST_LEN.fullmatch(n) and re.search(
+                rf"\*\s*{re.escape(n)}\b", args[0]):
+            return "demoted", "fixed-record-copy"
+
     if sink in BOUNDED:
         return "demoted", "bounded-copy"
 
