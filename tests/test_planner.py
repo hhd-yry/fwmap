@@ -73,7 +73,15 @@ def main() -> int:
                            "verify_stat": {"known": 3, "unknown": 0, "manual": 0},
                            "binary": "bin/x"}, 1.0)
     ok &= check("确实核对完才说「有公开记录」",
-                "被研究过" in " ".join(rep["lines"]), rep["lines"])
+                "已出现在公开 CVE 里" in " ".join(rep["lines"]), rep["lines"])
+    # 全部需人工时，不能冒充「核对过」
+    rep2 = planner._report({"history": [], "chains": [{"function": "FUN_1"}],
+                            "verified": True, "unknown_fns": [],
+                            "verify_stat": {"known": 0, "unknown": 0, "manual": 22},
+                            "binary": "bin/x"}, 1.0)
+    joined2 = " ".join(rep2["lines"])
+    ok &= check("全需人工时说明「没核对过」",
+                "没有核对过" in joined2 and "已出现在公开 CVE" not in joined2, rep2["lines"])
 
     print()
     print("PASS（工具注册表与决策循环）" if ok else "FAIL")

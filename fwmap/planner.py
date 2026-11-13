@@ -52,12 +52,13 @@ def decide(state: dict) -> dict | None:
 
     # skip_ghidra 只跳过「要 Ghidra」的两步（m2/m3），
     # 后面的 verify / dyn 该跑还得跑 —— dyn 要的是 qemu，不是 Ghidra。
-    if not state.get("endpoints") and not state.get("skip_ghidra"):
+    ran = state.get("ran") or []
+    if not state.get("endpoints") and not state.get("skip_ghidra") and "m2" not in ran:
         return {"tool": "m2",
                 "kwargs": {"binary": state["binary"]},
                 "why": "要把函数对上 URL，才能按路由名做双路检索"}
 
-    if not state.get("chains") and not state.get("skip_ghidra"):
+    if not state.get("chains") and not state.get("skip_ghidra") and "m3" not in ran:
         return {"tool": "m3",
                 "kwargs": {"binary": state["binary"], "limit": state["limit"]},
                 "why": "端点知道了，现在找「外部输入 → 危险函数」的链"}
@@ -252,10 +253,19 @@ def _report(state: dict, elapsed: float) -> dict:
         if unknown:
             lines.append(f"值得人工深挖：{', '.join(state['unknown_fns'][:6])}")
         elif chains:
-            lines.append("有链，但都已有公开记录——这个攻击面被研究过了")
+            # 「有链但没查到」分三种情况，不能一律说成「已被研究过」：
+            # 全部需人工（FUN_ 这类名字根本没法检索）时，我们其实什么都没核对。
+            manual = stat.get("manual", 0)
+            if known:
+                lines.append(f"有 {known} 条链对应的函数已出现在公开 CVE 里")
+            if manual:
+                lines.append(f"[!] 另有 {manual} 个函数名不可检索（FUN_/sub_），"
+                             "这部分**没有核对过**，需要人工看")
+            if not known and not manual:
+                lines.append("有链，但没有可检索的函数名，未能核对")
 
     if state.get("check_clean") is False:
-        lines.append("⚠ 解包自检有阻断项，先看 `fwmap check` 的输出再采信后面的结论")
+        lines.append("[!] 解包自检有阻断项，先看 `fwmap check` 的输出再采信后面的结论")
     return {"ok": True, "state": state, "lines": lines,
             "history": state["history"], "elapsed": round(elapsed, 1)}
 
