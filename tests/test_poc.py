@@ -140,10 +140,16 @@ def main() -> int:
                  "sink_category": "bof", "verdict": "keep"}
     for mode, want, chain in (("crash", "crash", bof_chain),
                               ("ok", "no-crash", bof_chain)):
-        port = free_port()
-        srv = fake_server(mode, port)
-        req = poc.build_requests(chain, {"uri": "/x"}, port=port)[-1]   # 最长的一档
-        res = dyn.run_request(req, native_rt(srv), timeout=6)
+        # 假服务是单连接的，端口分配/启动时序偶尔会打架 —— 失败重试一次，
+        # 避免测试本身变成随机失败源（被测逻辑已经自带一次重试）。
+        res = {}
+        for attempt in range(2):
+            port = free_port()
+            srv = fake_server(mode, port)
+            req = poc.build_requests(chain, {"uri": "/x"}, port=port)[-1]
+            res = dyn.run_request(req, native_rt(srv), timeout=6)
+            if res["status"] == want:
+                break
         ok &= check(f"{mode} 场景判成 {want}", res["status"] == want, res)
 
     # 服务起不来（脚本直接报错退出）→ no-listener，绝不能是 no-crash

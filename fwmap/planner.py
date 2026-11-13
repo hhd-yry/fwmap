@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 
@@ -85,15 +86,81 @@ def decide(state: dict) -> dict | None:
     return None
 
 
+def _hydrate(act: dict, state: dict) -> dict:
+    """把模型选的工具补上真实参数。
+
+    路径类参数一律由程序注入，不采信模型填的 —— 模型负责「选哪个工具」，
+    「用什么路径」是我们这边的事实。这样即使模型编了个不存在的路径也不会出事。
+    """
+    t = act["tool"]
+    kw = dict(act.get("kwargs") or {})
+    if t == "check":
+        kw = {"rootfs": state["rootfs"]}
+    elif t == "scan":
+        kw = {"rootfs": state["rootfs"], "top": 6}
+    elif t == "m2":
+        kw = {"binary": state["binary"]}
+    elif t == "m3":
+        kw = {"binary": state["binary"], "limit": state.get("limit", 20)}
+    elif t == "verify":
+        kw = {"chains": state.get("chains") or [],
+              "context": state.get("context", "")}
+    elif t == "dyn":
+        kw = {"chains": state.get("chains") or [], "binary": state["binary"],
+              "rootfs": state["rootfs"], "port": state.get("port", 80)}
+    elif t.startswith("plugin."):
+        kw = {**kw, "target": state["rootfs"]}
+    act["kwargs"] = kw
+    return act
+
+
+def _next_action(state: dict, use_llm: bool, llm_model: str | None, log) -> dict | None:
+    """先请模型提议，校验不过或没开就退回规则。"""
+    if use_llm:
+        from .agent import planner_llm as PL
+
+        act = PL.choose(state, T.catalog(), model_path=llm_model, log=log)
+        if act and act.get("done"):
+            # 模型说停 —— 只有当规则也认为该停时才接受，否则按规则继续
+            rule = decide(state)
+            if rule is None:
+                log(f"     模型判断可以停：{act.get('why')}")
+                return None
+            log(f"     模型想停（{act.get('why')}），但规则认为还要做 {rule['tool']}，按规则继续")
+            return rule
+        if act:
+            ok, why = PL.allowed_by_state(act, state)
+            if ok:
+                key = (act["tool"], json.dumps(act.get("kwargs") or {},
+                                               sort_keys=True, default=str))
+                state.setdefault("llm_seen", set()).add(key)
+                return _hydrate(act, state)
+            log(f"     模型这一步被拦下（{why}），带原因重试一次")
+            act = PL.choose(state, T.catalog(), model_path=llm_model, log=log,
+                            hint=f"你上次选的 {act['tool']} 不能用：{why}。请换一个动作。")
+            if act and not act.get("done"):
+                ok2, why2 = PL.allowed_by_state(act, state)
+                if ok2:
+                    key = (act["tool"], json.dumps(act.get("kwargs") or {},
+                                                   sort_keys=True, default=str))
+                    state.setdefault("llm_seen", set()).add(key)
+                    return _hydrate(act, state)
+                log(f"     重试仍被拦下（{why2}），退回规则")
+            else:
+                log("     重试没给出可用动作，退回规则")
+    return decide(state)
+
+
 def autopilot(rootfs: str, binary: str | None = None, limit: int = 20,
               port: int = 80, context: str = "", max_steps: int = 8,
               skip_ghidra: bool = False, plugins: list[str] | None = None,
+              use_llm: bool = False, llm_model: str | None = None,
               log=print) -> dict:
     state = {
         "rootfs": os.path.abspath(rootfs), "binary": binary, "limit": limit,
         "port": port, "context": context, "skip_ghidra": skip_ghidra,
         "chains": [], "targets": [], "unknown_fns": [], "history": [],
-        "plugins": [], "plugins_done": set(),
+        "plugins": [], "plugins_done": set(), "llm_seen": set(),
     }
     if plugins:
         from . import plugins as P
@@ -105,16 +172,19 @@ def autopilot(rootfs: str, binary: str | None = None, limit: int = 20,
         log("[autopilot] --skip-ghidra：只做不依赖 Ghidra 的步骤")
 
     for step in range(1, max_steps + 1):
-        act = decide(state)
+        act = _next_action(state, use_llm, llm_model, log)
         if act is None:
             log("[autopilot] 收敛：没有更多该做的一步了")
             break
-        log(f"[{step}] {act['why']}")
+        tag = "模型" if act.get("source") == "llm" else "规则"
+        log(f"[{step}] ({tag}) {act['why']}")
         log(f"     → 调用 {act['tool']}")
         res = T.call(act["tool"], **act["kwargs"])
         log(f"     ← {res.get('summary')}")
         state["history"].append({"step": step, "tool": act["tool"],
-                                 "why": act["why"], "result": res})
+                                 "why": act["why"],
+                                 "source": act.get("source", "rule"),
+                                 "result": res})
         _absorb(state, act["tool"], res)
 
     return _report(state, time.time() - t0)
@@ -184,7 +254,9 @@ def run(args, log=print) -> int:
                     port=args.port, context=args.context or "",
                     max_steps=args.max_steps,
                     skip_ghidra=getattr(args, "skip_ghidra", False),
-                    plugins=getattr(args, "plugin", None), log=log)
+                    plugins=getattr(args, "plugin", None),
+                    use_llm=getattr(args, "llm", False),
+                    llm_model=getattr(args, "llm_model", None), log=log)
     print()
     for ln in res["lines"]:
         print("  " + ln)
