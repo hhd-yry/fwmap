@@ -133,8 +133,13 @@ def allowed_by_state(act: dict, state: dict) -> tuple[bool, str]:
     - 依赖前置步骤的工具（比如没目标就跑 m2）。
     """
     tool = act["tool"]
-    if state.get("skip_ghidra") and tool in ("m2", "m3", "dyn", "bof"):
-        return False, "--skip-ghidra 模式下不跑需要 Ghidra/qemu 的工具"
+    if state.get("skip_ghidra") and tool in ("m2", "m3"):
+        return False, "--skip-ghidra 模式下不跑需要 Ghidra 的工具"
+    # 这些工具在同一个流程里跑第二遍没有意义（状态没变，结果也一样），
+    # 直接按「已经做过」拦下 —— 模型经常记不住自己刚做完什么。
+    ran = state.get("ran") or []
+    if tool in ran and not tool.startswith("plugin."):
+        return False, f"{tool} 这一步已经做过了"
     if tool == "check" and state.get("checked"):
         return False, "解包自检已经做过了"
     if tool == "scan" and state.get("targets"):

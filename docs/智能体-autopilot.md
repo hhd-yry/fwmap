@@ -161,7 +161,35 @@ fwmap autopilot <rootfs> --llm --llm-model E:/models/Qwen2.5-Coder-32B-Instruct
 所以收敛由规则兜底 —— 这正是「规则兜底」存在的意义，不是补丁。
 5090 上换 32B 之后，预期主要改善的就是「知道什么时候该收工」。
 
-## 7. 还没做的
+
+## 7. 两机分工：静态在 Windows，动态在 Linux
+
+Ghidra 在 Windows 上、qemu 在 Linux 上，不必两边都装全套。用 `--flow` 把静态产物
+带过去，`autopilot` 就会跳过 M2/M3，直接做核对和动态验证：
+
+```bash
+# Windows（有 Ghidra）：跑静态，产出 flow.json
+fwmap autopilot <rootfs> --context "Edimax,BR-6478AC" -o log.json
+
+# Linux（有 qemu）：拿现成的链，直接核对 + 真打
+sudo fwmap autopilot <rootfs> --flow flow.json --binary <rootfs>/bin/webs
+```
+
+实测（Ubuntu 22.04 + qemu-user-static）：
+
+```
+[1] (规则) 先确认解包完整 → check   ← 通过（1045 文件 / 79 ELF）
+[2] (规则) 还没选目标     → scan    ← 87 分 bin/webs
+[3] (规则) 先查有没有人报过 → verify ← 已公开 8 / 未命中 7
+[4] (规则) 这 7 个没被报过 → dyn    ← chroot+qemu-mipsel，试了 6 发：崩溃 0 / 未崩 6
+用时 54.8s
+```
+
+两边的耗时差得很明显：带 Ghidra 的完整静态跑 810 秒，
+用现成 flow 的核对+动态只要 55 秒。
+
+## 8. 还没做的
+
 
 - **插件结果的合并**：外部工具的结果现在只进日志，还没和我们的链做交叉验证
   （比如对方报的端点 vs 我们报的端点，取并集/差集）。

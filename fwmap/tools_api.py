@@ -161,16 +161,46 @@ def _verify(chains: list, context: str = "") -> dict:
           {"chains": "链列表", "binary": "ELF 路径", "rootfs": "rootfs 路径",
            "port": "端口", "cmd": "命令注入要执行的命令（可选）"})
 def _dyn(chains: list, binary: str, rootfs: str, port: int = 80,
-         cmd: str | None = None) -> dict:
+         cmd: str | None = None, check: str | None = None,
+         max_chains: int = 3) -> dict:
     from . import dyn as D
+    from . import poc
 
     arch = D._guess_arch(binary)
     rt = D.find_runtime(arch, rootfs, binary)
     if not rt:
         return _ok(f"动态验证跳过：这台机器没有能跑 {arch or '?'} 的运行时"
                    f"（需要 Linux + qemu-user）", skipped=True)
-    return _ok(f"动态验证：运行时 {rt['label']}（本工具在 MVP 里只报告可用性，"
-               f"完整执行用 `fwmap dyn`）", runtime=rt["label"], skipped=True)
+
+    effect = D._effect_path(rootfs, check) if check else None
+    stat = {"crash": 0, "no-crash": 0, "no-listener": 0, "exec": 0}
+    detail: list[str] = []
+    tried = 0
+    for c in [x for x in chains if x.get("verdict", "keep") == "keep"][:max_chains]:
+        reqs = poc.build_requests(c, None, port=port, cmd=cmd)
+        for r in reqs[:2]:
+            if effect:
+                try:
+                    os.remove(effect)
+                except OSError:
+                    pass
+            res = D.run_request(r, rt, timeout=8)
+            tried += 1
+            st = res.get("status", "?")
+            if effect and os.path.exists(effect):
+                stat["exec"] += 1
+                detail.append(f"{c.get('function')}: 命令已执行")
+                st = "exec"
+            elif st in stat:
+                stat[st] += 1
+            if st in ("crash", "exec"):
+                break
+    parts = [f"崩溃 {stat['crash']}", f"未崩 {stat['no-crash']}",
+             f"未验证 {stat['no-listener']}"]
+    if cmd:
+        parts.append(f"命令执行 {stat['exec']}")
+    return _ok(f"动态验证（{rt['label']}，试了 {tried} 发）：" + " / ".join(parts),
+               runtime=rt["label"], stat=stat, detail=detail[:5])
 
 
 @register("bof", "二分测栈溢出的最小崩溃长度（需要 qemu）",

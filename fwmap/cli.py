@@ -318,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-steps", type=int, default=8, help="最多走几步（默认 8）")
     ap.add_argument("--skip-ghidra", action="store_true",
                     help="跳过 M2/M3，只做不依赖 Ghidra 的步骤")
+    ap.add_argument("--flow", help="已有的 flow.json（有它就不再跑 M2/M3，直接核对+动态验证）")
     ap.add_argument("--llm", action="store_true",
                     help="让本地模型提议下一步（规则兜底）")
     ap.add_argument("--llm-model", help="模型目录（默认按 FWMAP_LLM_MODEL / 常见路径找）")

@@ -50,26 +50,19 @@ def decide(state: dict) -> dict | None:
         return {"tool": pending[0], "kwargs": {"target": state["rootfs"]},
                 "why": f"调外部工具 {pending[0]}（融合的关键：能调别人做的东西）"}
 
-    if state.get("skip_ghidra"):
-        if not state.get("verified"):
-            chains = state.get("chains") or []
-            if chains:
-                return {"tool": "verify", "kwargs": {"chains": chains,
-                                                     "context": state.get("context", "")},
-                        "why": "跳过 Ghidra，直接对已有链做新颖性核对"}
-        return None
-
-    if not state.get("endpoints"):
+    # skip_ghidra 只跳过「要 Ghidra」的两步（m2/m3），
+    # 后面的 verify / dyn 该跑还得跑 —— dyn 要的是 qemu，不是 Ghidra。
+    if not state.get("endpoints") and not state.get("skip_ghidra"):
         return {"tool": "m2",
                 "kwargs": {"binary": state["binary"]},
                 "why": "要把函数对上 URL，才能按路由名做双路检索"}
 
-    if not state.get("chains"):
+    if not state.get("chains") and not state.get("skip_ghidra"):
         return {"tool": "m3",
                 "kwargs": {"binary": state["binary"], "limit": state["limit"]},
                 "why": "端点知道了，现在找「外部输入 → 危险函数」的链"}
 
-    if not state.get("verified"):
+    if not state.get("verified") and state.get("chains"):
         return {"tool": "verify",
                 "kwargs": {"chains": state["chains"],
                            "context": state.get("context", "")},
@@ -155,13 +148,29 @@ def autopilot(rootfs: str, binary: str | None = None, limit: int = 20,
               port: int = 80, context: str = "", max_steps: int = 8,
               skip_ghidra: bool = False, plugins: list[str] | None = None,
               use_llm: bool = False, llm_model: str | None = None,
-              log=print) -> dict:
+              flow: str | None = None, log=print) -> dict:
     state = {
         "rootfs": os.path.abspath(rootfs), "binary": binary, "limit": limit,
         "port": port, "context": context, "skip_ghidra": skip_ghidra,
         "chains": [], "targets": [], "unknown_fns": [], "history": [],
         "plugins": [], "plugins_done": set(), "llm_seen": set(),
     }
+    if flow:
+        # 两机分工：静态分析在 Windows（有 Ghidra）跑出 flow.json，
+        # 拿它到 Linux（有 qemu）上做动态验证 —— 这样才不用在两边都装全套。
+        from .verify import _read_json
+
+        raw = _read_json(flow)
+        chains = [c for c in (raw.get("chains") or [])
+                  if c.get("verdict", "keep") == "keep"]
+        state["chains"] = chains
+        state["flow"] = os.path.abspath(flow)
+        state["skip_ghidra"] = True          # 有现成的链，就不用再跑 m2/m3 了
+        # flow.json 里的 binary 是「做静态分析那台机器」的路径，
+        # 跨机器跑时它一定是错的 —— 只有显式没给 --binary 才用它兜底。
+        if raw.get("binary") and not binary:
+            state["binary"] = raw["binary"]
+        log(f"[autopilot] 预载 {os.path.basename(flow)}：{len(chains)} 条链")
     if plugins:
         from . import plugins as P
 
@@ -192,6 +201,8 @@ def autopilot(rootfs: str, binary: str | None = None, limit: int = 20,
 
 def _absorb(state: dict, tool: str, res: dict) -> None:
     """把工具结果吸收进状态，供下一步决策。"""
+    if not tool.startswith("plugin."):
+        state.setdefault("ran", []).append(tool)
     if tool == "check":
         state["checked"] = True
         state["check_clean"] = res.get("ok_clean", False)
@@ -256,7 +267,8 @@ def run(args, log=print) -> int:
                     skip_ghidra=getattr(args, "skip_ghidra", False),
                     plugins=getattr(args, "plugin", None),
                     use_llm=getattr(args, "llm", False),
-                    llm_model=getattr(args, "llm_model", None), log=log)
+                    llm_model=getattr(args, "llm_model", None),
+                    flow=getattr(args, "flow", None), log=log)
     print()
     for ln in res["lines"]:
         print("  " + ln)
