@@ -106,6 +106,17 @@ def main() -> int:
     loaded = P.load([tmp], log=lambda *_: None)
     ok &= check("目录批量加载", "plugin.t_dir1" in loaded, loaded)
 
+    # 8) 模板生成 + 自测（对方拿到手的第一分钟）
+    tdir = os.path.join(tmp, "template")
+    r = P.init_template(tdir, name="t_template", desc="模板测试")
+    ok &= check("init 生成三个文件",
+                all(os.path.exists(x) for x in (r["manifest"], r["tool"],
+                                                os.path.join(tdir, "README.md"))),
+                r)
+    ok &= check("生成的 manifest 合法", P.load_manifest(r["manifest"])["name"] == "t_template")
+    rc = P.test_manifest(r["manifest"], tmp, log=lambda *_: None)
+    ok &= check("plugin test 自测通过", rc == 0, rc)
+
     print()
     print("PASS（插件接口）" if ok else "FAIL")
     return 0 if ok else 1

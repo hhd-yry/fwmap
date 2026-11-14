@@ -161,3 +161,166 @@ def example_manifest() -> dict:
         "output": "json",
         "timeout": 600,
     }
+
+
+# ---------------------------------------------------------------- 对接工具
+TOOL_STUB = '''"""外部工具模板 —— 改这三处就能接进 fwmap。
+
+约定（很短）：
+  1. 从命令行拿参数（fwmap 会按 manifest 里的 {占位符} 替换）；
+  2. 把结果**以 JSON 打到 stdout**；
+  3. 出错就非 0 退出，错误信息打到 stderr。
+
+fwmap 只取你输出里的「摘要」，不会把你的原始大 JSON 塞给模型，
+所以这里可以放心输出完整结果。
+"""
+import argparse
+import json
+import os
+import sys
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    # ① 这里定义你的参数（名字要和 manifest.json 里的 args / {占位符} 对上）
+    ap.add_argument("--target", required=True, help="解包后的 rootfs 目录")
+    a = ap.parse_args()
+
+    if not os.path.isdir(a.target):
+        print(f"target 不是目录：{a.target}", file=sys.stderr)
+        return 2
+
+    # ② 这里换成你的真实逻辑
+    files = sum(len(f) for _, _, f in os.walk(a.target))
+
+    # ③ 结果用 JSON 打到 stdout（list 或 dict 都行）
+    json.dump({
+        "tool": "my_tool",
+        "target": os.path.abspath(a.target),
+        "files": files,
+        "findings": [],          # 你的结论放这里
+        "note": "换成你自己的输出",
+    }, sys.stdout, ensure_ascii=False)
+    print()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+README_STUB = """# 把「{name}」接进 fwmap
+
+## 1. 改 `tool.py`
+
+- `①` 参数定义
+- `②` 你的真实逻辑
+- `③` 结果用 JSON 打到 stdout
+
+跑一下：
+
+```bash
+python tool.py --target <某个 rootfs 目录>
+```
+
+能打出 JSON 就说明工具本身没问题。
+
+## 2. 改 `manifest.json`
+
+```json
+{manifest}
+```
+
+重点：`cmd` 里的 `{{target}}` 会被 fwmap 替换成真实路径。
+
+## 3. 自测
+
+```bash
+python -m fwmap plugin test manifest.json --target <某个 rootfs 目录>
+```
+
+看到 `[OK] 接口通了` 就接上了。
+
+## 4. 在智能体里用
+
+```bash
+python -m fwmap autopilot <rootfs> --plugin manifest.json
+```
+"""
+
+
+def init_template(dirpath: str, name: str = "my_tool", desc: str = "一句话说明这个工具干什么",
+                  python: str | None = None) -> dict:
+    """生成一份可以直接改的对接模板：manifest.json + tool.py + README.md。"""
+    os.makedirs(dirpath, exist_ok=True)
+    py = python or sys.executable
+    tool_py = os.path.join(dirpath, "tool.py")
+    manifest = {
+        "name": name,
+        "desc": desc,
+        "cmd": [py, tool_py.replace("\\", "/"), "--target", "{target}"],
+        "args": {"target": "解包后的 rootfs 目录"},
+        "output": "json",
+        "timeout": 600,
+    }
+    mpath = os.path.join(dirpath, "manifest.json")
+    with open(tool_py, "w", encoding="utf-8") as fh:
+        fh.write(TOOL_STUB)
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, ensure_ascii=False, indent=2)
+    with open(os.path.join(dirpath, "README.md"), "w", encoding="utf-8") as fh:
+        fh.write(README_STUB.format(
+            name=name,
+            manifest=json.dumps(manifest, ensure_ascii=False, indent=2)))
+    return {"dir": os.path.abspath(dirpath), "manifest": mpath, "tool": tool_py}
+
+
+def test_manifest(manifest_path: str, target: str, log=print) -> int:
+    """自测：加载 manifest、真跑一次、把摘要打出来。返回 0 表示接口通了。"""
+    try:
+        m = load_manifest(manifest_path)
+    except Exception as e:                              # noqa: BLE001
+        log(f"[FAIL] manifest 读不了：{e}")
+        return 2
+    log(f"[1/3] manifest 合法：{m['name']}（{m['desc']}）")
+
+    if not os.path.isdir(target):
+        log(f"[FAIL] --target 不是目录：{target}")
+        return 2
+
+    name = register_manifest(m)
+    log(f"[2/3] 已注册为工具 `{name}`，开始试跑 …")
+    res = T.call(name, target=target)
+    if not res.get("ok"):
+        log(f"[FAIL] 执行失败：{res.get('summary')}")
+        return 1
+
+    log(f"[3/3] 返回：{res.get('summary')}")
+    head = res.get("data") or {}
+    if head:
+        log(f"      摘要数据：{json.dumps(head, ensure_ascii=False)[:300]}")
+    log("")
+    log("[OK] 接口通了。把它加进智能体：")
+    log(f"     python -m fwmap autopilot <rootfs> --plugin {os.path.abspath(manifest_path)}")
+    return 0
+
+
+def run(args) -> int:
+    cmd = getattr(args, "plugin_cmd", None) or "test"
+    if cmd == "init":
+        r = init_template(args.dir, name=args.name, desc=args.desc or "一句话说明这个工具干什么")
+        print(f"[+] 模板已生成：{r['dir']}")
+        print(f"    {os.path.basename(r['manifest'])}  改 cmd / args")
+        print(f"    {os.path.basename(r['tool'])}      改逻辑（① 参数 ② 逻辑 ③ 输出 JSON）")
+        print(f"    README.md      三步说明")
+        print()
+        print("下一步：")
+        print(f"    python -m fwmap plugin test {r['manifest']} --target <rootfs>")
+        return 0
+
+    if cmd == "test":
+        return test_manifest(args.manifest, args.target)
+
+    print("[!] 用法：fwmap plugin init <目录> | fwmap plugin test <manifest> --target <rootfs>")
+    return 2
+

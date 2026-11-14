@@ -309,6 +309,17 @@ def main(argv: list[str] | None = None) -> int:
     bf.add_argument("-o", "--out", help="输出 markdown")
     bf.set_defaults(func=lambda a: __import__("fwmap.exploit", fromlist=["run"]).run(a))
 
+    pl = sub.add_parser("plugin", help="插件对接：生成模板 / 自测外部工具能不能接进来")
+    psub = pl.add_subparsers(dest="plugin_cmd")
+    pi = psub.add_parser("init", help="生成一份可直接改的对接模板")
+    pi.add_argument("dir", help="生成到哪个目录")
+    pi.add_argument("--name", default="my_tool", help="工具名")
+    pi.add_argument("--desc", help="一句话说明")
+    pt = psub.add_parser("test", help="自测：加载 manifest 并真跑一次")
+    pt.add_argument("manifest", help="manifest.json 路径")
+    pt.add_argument("--target", required=True, help="用一个真实 rootfs 试跑")
+    pl.set_defaults(func=lambda a: __import__("fwmap.plugins", fromlist=["run"]).run(a))
+
     ap = sub.add_parser("autopilot", help="智能体：自己决定调哪个工具，一路跑到结论")
     ap.add_argument("rootfs", help="解包后的 rootfs 目录")
     ap.add_argument("--binary", help="直接指定目标 ELF（不指定就先 scan 选）")
