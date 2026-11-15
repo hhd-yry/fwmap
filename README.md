@@ -397,6 +397,49 @@ NVRAM（`/dev/mtdblock0` ← `etc/config.bin`）怎么补，见
 
 `Ghidra` 与本地模型仅在运行 M2/M3 与 `--agent` 时需要；`scan` 无任何外部依赖。
 
+### 换一台电脑会跑不了吗
+
+**不会，只要你带对包。** 三种包的区别就在这里：
+
+| 你拿到的 | 大小 | 换机器后要做什么 |
+|---|---|---|
+| `git clone`（纯代码，93 个文件） | 12 MB | `fwmap setup`（装 Ghidra+JDK，约 1.1 GB）+ `fwmap nvd fetch/build`（约 500 MB）。**不做也能跑 `scan`** —— 刚实测过：clean 目录里 `scan` 正常，`doctor` 明确列出缺什么 |
+| 便携 zip（带 `tools/` + `data/nvd/`） | 951 MB | 解压到任意路径，双击 `开始.cmd`。Ghidra、JDK 25、42 万条 CVE 库都在里面 |
+| 便携 zip + 模型（`tools/models/`） | ~6.5 GB | 同上；另外对方机器要有 NVIDIA 显卡 ≥6 GB |
+
+**为什么换盘符也不怕**：程序按「环境变量 → **包旁边的 `tools/`** → 常见安装位置 → 扫盘」找 Ghidra，
+按「包内的 `data/nvd/nvd.sqlite`」找 CVE 库，按「包内的 `ghidra_scripts/`」找脚本。
+Ghidra 启动时会自动把包里的 `tools/jdk*` 设成 `JAVA_HOME` —— 所以对方机器上装着 Java 17
+也不会把 Ghidra 12.2 顶掉（我们这台就是系统 Java 17 + 包内 JDK 25）。
+
+**仍然写死的只有三处**，且都不影响主流程：
+
+| 位置 | 写死什么 | 影响 |
+|---|---|---|
+| `fwmap/agent/llm.py` | 开发机那两份路径（`libs-bnb`、模型）**排在最后**，目录不存在就跳过 | 无。前面有 `FWMAP_AGENT_LIBS` 和包内 `tools/pylibs`、`tools/models/` |
+| `fwmap/m2.py` | `C:/D:/E:` 盘根扫 `ghidra*` | 只是兜底候选，扫不到就算了 |
+| — | 没有别的绝对路径了 | — |
+
+### 模型怎么办（三选一）
+
+| 方案 | 体积 | 需要什么 | 少了它会怎样 |
+|---|---|---|---|
+| **不带模型**（推荐给验收/答辩） | 0 | 无 | 工具照跑。「模型只取证、规则裁决」——LLM 复核只是把证据读给人看，不改变结论 |
+| 带上 7B | 5.6 GB | NVIDIA ≥6 GB 显存 + torch/transformers/bitsandbytes/accelerate（约 2.5 GB） | — |
+| 换成 1.5B | 1.6 GB | CPU 也能跑，慢 | 复核质量下降，但结论仍由规则给 |
+
+放模型的两种姿势：
+
+```bash
+# ① 放进包里（推荐）：任何情况下都会被自动找到
+fwmap-tool/tools/models/Qwen2.5-Coder-7B-Instruct/
+
+# ② 放在别处，用环境变量指过去
+set FWMAP_LLM_MODEL=D:\models\Qwen2.5-Coder-7B-Instruct
+```
+
+验证是否被认到：`python -m fwmap doctor --agent`。
+
 ---
 
 ## 路径与环境变量

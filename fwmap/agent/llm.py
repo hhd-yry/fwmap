@@ -13,13 +13,20 @@ import re
 import sys
 import time
 
-# agent 依赖（torch / transformers / bitsandbytes / accelerate）装在独立目录里。
-# 以前要用户自己设 PYTHONPATH，忘了就静默失败；这里自动加进 sys.path。
-_LIBS = os.environ.get("FWMAP_AGENT_LIBS") or r"C:\deepseek\libs-bnb"
-if os.path.isdir(_LIBS) and _LIBS not in sys.path:
-    sys.path.insert(0, _LIBS)
+# agent 依赖（torch / transformers / bitsandbytes / accelerate）通常不在系统 Python 里，
+# 而是单独装一份。以前要用户自己设 PYTHONPATH，忘了就静默失败；这里按顺序自己找。
+#
+# 顺序：环境变量 → 包旁边的 tools\pylibs → 开发机上那份。
+# 最后一项是历史遗留路径，只在本机存在时生效 —— 换台机器不会因为它而失败。
+_PKG_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+for _cand in (os.environ.get("FWMAP_AGENT_LIBS"),
+              os.path.join(_PKG_ROOT, "tools", "pylibs"),
+              r"C:\deepseek\libs-bnb"):
+    if _cand and os.path.isdir(_cand) and _cand not in sys.path:
+        sys.path.insert(0, _cand)
 
-DEFAULT_MODEL = r"C:\deepseek\tools\models\Qwen2.5-Coder-7B-Instruct"
+# 默认模型路径按包目录算，不写死盘符：便携包里把模型放 tools\models\ 就能被找到。
+DEFAULT_MODEL = os.path.join(_PKG_ROOT, "tools", "models", "Qwen2.5-Coder-7B-Instruct")
 
 
 def find_model(model_path: str | None = None, verbose: bool = False) -> str:

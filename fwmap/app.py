@@ -98,6 +98,7 @@ class App(tk.Tk):
         self.proc: subprocess.Popen | None = None
         self.started_at = 0.0
         self.last_outdir = ""
+        self.last_mode = ""
         self._build()
 
     # ---------------------------------------------------------------- 界面
@@ -218,6 +219,7 @@ class App(tk.Tk):
             outdir = Path.home() / "fwmap-out" / f"{name}-{mode}-{stamp}"
             outdir.mkdir(parents=True, exist_ok=1)
         self.last_outdir = str(outdir)
+        self.last_mode = mode
 
         cmd = build_cmd(mode, target, str(outdir), binary=self.binary.get().strip(),
                         port=int(self.port.get() or 8080), llm=bool(self.llm.get()))
@@ -288,9 +290,13 @@ class App(tk.Tk):
         self.pb.pack_forget()
         secs = time.time() - self.started_at
         report = self._find_report()
-        if code == 0:
-            self.status.set(f"完成，用时 {secs:.0f} 秒。输出在 {self.last_outdir}")
-            self._log(f"\n[+] 完成，用时 {secs:.0f} 秒\n", "ok")
+        # doctor 的退出码 1 表示「有缺项」，不是失败 —— 别把红色警告当成程序崩了
+        missing = self.last_mode == "doctor" and code == 1
+        if code == 0 or missing:
+            tail = "（有缺项，看上面的 [MISS] 行）" if missing else ""
+            self.status.set(f"完成，用时 {secs:.0f} 秒{tail}。输出在 {self.last_outdir}")
+            self._log(f"\n[+] 完成，用时 {secs:.0f} 秒{tail}\n",
+                      "err" if missing else "ok")
             if report:
                 self._log(f"[+] 报告：{report}\n", "ok")
         else:

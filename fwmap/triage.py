@@ -328,8 +328,9 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
         if errs:
             L.append("<div class='warn'><b>LLM 复核失败，本节没有结果。</b><br>"
                      f"<span class='mono'>{e('; '.join(errs)[:400])}</span><br>"
-                     "常见原因：缺少 agent 依赖（accelerate / bitsandbytes）。"
-                     "请先设 <span class='mono'>PYTHONPATH=C:\\deepseek\\libs-bnb</span> 再重跑。</div>")
+                     "常见原因：没装 agent 依赖（accelerate / bitsandbytes / torch）。"
+                     "装好后再跑，或者设 <span class='mono'>FWMAP_AGENT_LIBS</span> "
+                     "指向它们所在的目录。</div>")
         else:
             L.append("<div class='warn'>LLM 复核没有产出（没有可复核的候选链）。</div>")
     elif res.get("agent") and res.get("agent_rows"):
