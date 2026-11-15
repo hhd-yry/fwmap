@@ -284,6 +284,54 @@ def _report(state: dict, elapsed: float) -> dict:
             "history": state["history"], "elapsed": round(elapsed, 1)}
 
 
+def write_html(path: str, res: dict, rootfs: str) -> str:
+    """把一次 autopilot 的过程写成能直接看的一页 HTML。
+
+    为什么要这个：`autopilot` 原来只吐一个 `survey.json`，界面上的「打开报告」是灰的，
+    跑完十二分钟屏幕上只有几行滚动日志 —— 用户的第一反应就是「怎么没输出」。
+    这里不改分析逻辑，只是让它有个**能打开、能截图、能给老师看**的结果页。
+    """
+    import html as _html
+
+    e = _html.escape
+    rows = []
+    for h in res.get("history") or []:
+        rows.append(
+            f"<tr><td>{h.get('step', '')}</td>"
+            f"<td class='mono'>{e(str(h.get('tool', '')))}</td>"
+            f"<td>{'模型' if h.get('source') == 'llm' else '规则'}</td>"
+            f"<td>{e(str(h.get('why') or ''))}</td>"
+            f"<td>{e(str((h.get('result') or {}).get('summary') or ''))}</td></tr>")
+    concl = "".join(f"<li>{e(ln)}</li>" for ln in res.get("lines") or [])
+    doc = f"""<!doctype html><meta charset="utf-8">
+<title>fwmap autopilot 结论</title>
+<style>
+body{{font:14px/1.65 -apple-system,"Segoe UI",system-ui,sans-serif;margin:0;background:#f8f9fb;color:#101828}}
+.wrap{{max-width:1000px;margin:0 auto;padding:28px 22px 70px}}
+h1{{font-size:21px;margin:0 0 4px}} .sub{{color:#667085;font-size:13px}}
+.card{{background:#fff;border:1px solid #e4e7ec;border-radius:8px;padding:14px 18px;margin:16px 0}}
+table{{border-collapse:collapse;width:100%;background:#fff;border:1px solid #e4e7ec;border-radius:8px;overflow:hidden}}
+th{{background:#f9fafb;text-align:left;font-size:12px;color:#475467;padding:8px 10px;border-bottom:1px solid #e4e7ec}}
+td{{padding:8px 10px;border-bottom:1px solid #f2f4f7;vertical-align:top;font-size:13px}}
+.mono{{font-family:Consolas,monospace}}
+.note{{background:#eff8ff;border-left:3px solid #2e90fa;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;color:#175cd3}}
+</style>
+<div class="wrap">
+<h1>fwmap 一键分析：结论</h1>
+<div class="sub">目标 <span class="mono">{e(rootfs)}</span> · 用时 {res.get('elapsed', '?')} 秒 ·
+共 {len(res.get('history') or [])} 步</div>
+<div class="card"><b>结论</b><ul>{concl}</ul></div>
+<table><tr><th>#</th><th>工具</th><th>谁定的</th><th>为什么这一步</th><th>结果</th></tr>{''.join(rows)}</table>
+<div class="note" style="margin-top:16px">
+这一页是「工具自己怎么走完这条流程」的记录，不是逐条链的明细。
+要看每条链的源、汇、守卫代码和新颖性，用界面上的<b>「完整报告（HTML）」</b>。
+</div>
+</div>"""
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(doc)
+    return path
+
+
 def run(args, log=print) -> int:
     res = autopilot(args.rootfs, binary=args.binary, limit=args.limit,
                     port=args.port, context=args.context or "",
@@ -305,4 +353,13 @@ def run(args, log=print) -> int:
                                    for h in res["history"]]},
                       fh, ensure_ascii=False, indent=1)
         print(f"\n[+] 调查日志：{args.out}")
+        # 同目录再写一页 HTML：只要界面能打开、能截图，就不算「没有输出」
+        import os as _os
+
+        page = _os.path.splitext(args.out)[0] + ".html"
+        try:
+            write_html(page, res, args.rootfs)
+            print(f"[+] 结论页：{page}")
+        except Exception as ex:                              # noqa: BLE001
+            print(f"[!] 结论页写不出来（不影响分析）：{ex}")
     return 0

@@ -456,6 +456,37 @@ class App(tk.Tk):
                 self._log(f"    {hint}\n", "err")
         self.b_report_open.configure(state="normal" if report else "disabled")
 
+        # 一键分析以前只出 survey.json，屏幕上就几行滚动的字 —— 太容易让人觉得「没跑」。
+        # 跑完弹一个结论框，顺便把结论页（survey.html）亮出来。
+        if code == 0 and self.last_mode == "auto":
+            self._show_summary()
+
+    def _summary_text(self) -> str:
+        """从 survey.json 取结论，拼成能直接读的一段话。"""
+        path = Path(self.last_outdir) / "survey.json" if self.last_outdir else None
+        if not path or not path.exists():
+            return ""
+        try:
+            with open(path, encoding="utf-8-sig") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            return ""
+        lines = [str(x) for x in (data.get("lines") or [])]
+        if not lines:
+            return ""
+        return ("\n".join("· " + x for x in lines)
+                + "\n\n（「打开报告」能看这一页；逐条链的明细用「完整报告」。）")
+
+    def _show_summary(self) -> None:
+        text = self._summary_text()
+        if not text:
+            return
+        self._log("\n" + text + "\n", "ok")
+        try:
+            messagebox.showinfo("分析完成", text)
+        except tk.TclError:
+            pass
+
     def _find_report(self) -> str:
         """在输出目录里找 report.html —— 有它才让「打开报告」可点，不猜路径。"""
         if not self.last_outdir or not os.path.isdir(self.last_outdir):

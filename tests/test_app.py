@@ -5,6 +5,7 @@ GUI 里能点的东西没法断言，但**命令拼错**一定会出事（参数
 窗口本身只在有图形环境时才建，没有就跳过。
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -157,6 +158,19 @@ def main() -> int:
     open(html, "w", encoding="utf-8").write("<html></html>")
     ok &= check("能找到子目录里的 report.html", app.App._find_report(fake) == html,
                 app.App._find_report(fake))
+
+    # 5) 一键分析跑完，要能从 survey.json 读出结论（界面上弹框用）
+    auto_dir = os.path.join(tmp, "auto")
+    os.makedirs(auto_dir)
+    with open(os.path.join(auto_dir, "survey.json"), "w", encoding="utf-8") as fh:
+        json.dump({"lines": ["用时 612s，共 6 步", "端点 45 个 · 链 26 条"],
+                   "history": []}, fh, ensure_ascii=False)
+    stub = types.SimpleNamespace(last_outdir=auto_dir)
+    text = app.App._summary_text(stub)
+    ok &= check("能读出结论", "端点 45 个" in text, text)
+    ok &= check("结论里提醒去看报告", "打开报告" in text or "完整报告" in text, text)
+    ok &= check("没有 survey.json 时返回空",
+                app.App._summary_text(types.SimpleNamespace(last_outdir=tmp)) == "")
 
     # 这个测试会造一个 300 MB 的假权重，跑完必须删干净 —— 忘了删会堆出几十 GB。
     import shutil
