@@ -113,6 +113,26 @@ def _script_dir() -> str:
     return os.path.dirname(here)
 
 
+def jdk_home() -> str:
+    """找要用的 JDK：`FWMAP_JAVA_HOME` → 包内 `tools/jdk*` → 空字符串（交给系统 java）。
+
+    为什么要有环境变量这一档：包内那份 JDK 可能被系统打过完整性标签、或者被杀软动过，
+    换一份就行，不必动代码。Ghidra 12.2 要求 Java 25，系统里通常是 17。
+    """
+    env = os.environ.get("FWMAP_JAVA_HOME")
+    if env and os.path.isdir(env):
+        return env
+    pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    tools = os.path.join(pkg, "tools")
+    if not os.path.isdir(tools):
+        return ""
+    for name in sorted(os.listdir(tools)):
+        p = os.path.join(tools, name)
+        if name.lower().startswith("jdk") and os.path.isdir(p):
+            return p
+    return ""
+
+
 def _kill_tree(pid: int) -> None:
     """连子进程一起杀。analyzeHeadless.bat 会派 cmd → java，只杀 bat 会留下 java 占着工程锁。"""
     if os.name == "nt":
@@ -137,24 +157,26 @@ def run_ghidra(cmd: list[str], timeout: int, label: str = "") -> str:
     env = os.environ.copy()
     # 随包安装的 JDK（fwmap setup 装到 tools\jdk*）优先：
     # Ghidra 12.2 要求 Java 25，系统里若是 17/21 会拒绝启动。
-    try:
-        _pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        _tools = os.path.join(_pkg, "tools")
-        if os.path.isdir(_tools):
-            for _name in sorted(os.listdir(_tools)):
-                _p = os.path.join(_tools, _name)
-                if _name.lower().startswith("jdk") and os.path.isdir(_p):
-                    env["JAVA_HOME"] = _p
-                    break
-    except Exception:
-        pass
+    _jh = jdk_home()
+    if _jh:
+        env["JAVA_HOME"] = _jh
     try:
         tmp = os.path.join(os.path.dirname(cmd[1]), "ghidra-temp")
         os.makedirs(tmp, exist_ok=True)
+        # Ghidra 启动第一件事是在 <TEMP> 下建它自己的临时目录，名字有两种写法：
+        # <用户名>-ghidra（Launcher 走的那条）和 ghidra。某些 Windows 上它自己的
+        # mkdirs 会返回 false（权限够、路径也短，就是建不出来），直接报
+        # "Failed to create directory" 然后退出。目录已存在时它会跳过 mkdirs，
+        # 所以这里两种都替它建好 —— 这是实测唯一稳定的绕法。
+        _user = os.environ.get("USERNAME") or os.environ.get("USER") or "user"
+        for _name in (f"{_user}-ghidra", "ghidra"):
+            os.makedirs(os.path.join(tmp, _name), exist_ok=True)
         env["TEMP"] = env["TMP"] = tmp
     except Exception:
         pass
-    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=env)
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                            errors="replace", env=env)
     try:
         out, err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:

@@ -445,6 +445,28 @@ def cmd_doctor(args) -> int:
     g = find_ghidra()
     line("Ghidra", bool(g), g or "没找到（跑 py -3.13 -m fwmap setup）")
 
+    # Ghidra 自己的 launch.properties 里，`LaunchSupport -save` 会写入 JAVA_HOME_OVERRIDE，
+    # 某些安装还会带 settingsdir/cachedir。这些都是**绝对路径**，换台机器就废：
+    # 轻则报 "Failed to find a supported JDK"，重则 Directory not found。
+    if g:
+        import re as _re
+        lp = _os.path.join(g, "support", "launch.properties")
+        bad = []
+        if _os.path.exists(lp):
+            for ln in open(lp, encoding="utf-8", errors="replace"):
+                m = _re.match(r"(JAVA_HOME_OVERRIDE|VMARGS=.*application\.(?:settingsdir|cachedir))=(.*)",
+                              ln.strip())
+                if not m:
+                    continue
+                val = m.group(2).split("=", 1)[-1].strip()
+                if val and not _os.path.isdir(val):
+                    bad.append(val)
+        if bad:
+            line("Ghidra配置", False,
+                 f"launch.properties 指向本机路径（这台机器上不存在）：{bad[0]}", soft=True)
+            print("       § 换机器前请删掉 support/launch.properties 里的 "
+                  "JAVA_HOME_OVERRIDE / application.settingsdir / application.cachedir 三行")
+
     # 随包 JDK（setup 装的）与系统 JDK 分开看：Ghidra 12.2 要求 25
     jdk_dir, jdk_ver = None, ""
     tools = _os.path.join(root, "tools")
