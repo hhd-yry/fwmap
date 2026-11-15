@@ -45,6 +45,46 @@ def main() -> int:
     ok &= check("dry-run 没有 exec", "exec-confirmed" not in out["counts"])
     ok &= check("返回里有 chains 数", out["chains"] == 1)
 
+    # 2.5) CLI 的 dyn 跑完要给出正确退出码（env-broken 是 3，正常是 0）
+    #      这一段以前在 `run()` 里引用了 run_dyn 内部的变量，VM 上直接 NameError。
+    import argparse
+    import json
+    import tempfile
+
+    flow = {"binary": "bin/webs", "chains": [chain()]}
+    tmp = tempfile.mkdtemp(prefix="fwmap-dyn-")
+    flow_path = os.path.join(tmp, "flow.json")
+    with open(flow_path, "w", encoding="utf-8") as fh:
+        json.dump(flow, fh, ensure_ascii=False)
+
+    def ns():
+        return argparse.Namespace(flow=flow_path, binary="bin/webs", rootfs="/x", port=80,
+                                  arch=None, cmd=None, check=None, only=None,
+                                  max_payloads=1, timeout=1.0, dry_run=False, m2=None,
+                                  out=None, json=None, allow_stale=True)
+
+    real_run_dyn = D.run_dyn
+    try:
+        D.run_dyn = lambda *a, **k: {"arch": "mipsel", "label": "chroot+qemu",
+                                     "control": {"status": "crash"}, "results": [],
+                                     "counts": {}, "chains": 1, "env_broken": True,
+                                     "settings": {}}
+        ok &= check("对照组崩了 → 退出码 3", D.run(ns()) == 3)
+
+        D.run_dyn = lambda *a, **k: {
+            "arch": "mipsel", "label": "chroot+qemu", "control": {"status": "no-crash"},
+            "results": [{"chain": chain(), "rows": [
+                {"req": {"value": "x'\\nid\\n'"}, "result": {"status": "exec-confirmed",
+                                                            "effect": "uid=0"}}]}],
+            "counts": {"exec-confirmed": 1}, "chains": 1, "env_broken": False,
+            "settings": {}}
+        ok &= check("有 exec 命中 → 退出码 0", D.run(ns()) == 0)
+    finally:
+        D.run_dyn = real_run_dyn
+        import shutil
+
+        shutil.rmtree(tmp, ignore_errors=True)
+
     # 3) 报告渲染：有 dyn 数据时要出现 ④，且四种状态都有中文
     labels = triage._DYN_LABEL
     for st in ("exec-confirmed", "crash", "no-crash", "no-listener"):

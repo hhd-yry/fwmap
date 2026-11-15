@@ -447,7 +447,7 @@ def run(args) -> int:
         print("    在 Linux 上装 qemu-user-static 后重跑：")
         print(f"    {q} -L {args.rootfs or '<rootfs>'} {args.binary}")
         return 2
-    if env_broken:
+    if out.get("env_broken"):
         print("[+] 全部标为「环境崩溃，未验证」——先修好运行环境（NVRAM/设备）再谈漏洞")
         return 3
     hits = [x for r in results for x in r["rows"] if x["result"]["status"] == "exec-confirmed"]
