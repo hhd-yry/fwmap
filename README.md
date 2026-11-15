@@ -404,8 +404,8 @@ NVRAM（`/dev/mtdblock0` ← `etc/config.bin`）怎么补，见
 | 你拿到的 | 大小 | 换机器后要做什么 |
 |---|---|---|
 | `git clone`（纯代码，93 个文件） | 12 MB | `fwmap setup`（装 Ghidra+JDK，约 1.1 GB）+ `fwmap nvd fetch/build`（约 500 MB）。**不做也能跑 `scan`** —— 刚实测过：clean 目录里 `scan` 正常，`doctor` 明确列出缺什么 |
-| 便携 zip（带 `tools/` + `data/nvd/`） | 951 MB | 解压到任意路径，双击 `开始.cmd`。Ghidra、JDK 25、42 万条 CVE 库都在里面 |
-| 便携 zip + 模型（`tools/models/`） | ~6.5 GB | 同上；另外对方机器要有 NVIDIA 显卡 ≥6 GB |
+| 便携 zip（带 `tools/` + `data/nvd/nvd.sqlite`） | 991 MB | 解压到任意路径，双击 `开始.cmd`。Ghidra、JDK 25、42 万条 CVE 库都在里面（不含 NVD 原始年包，要重建索引再 `nvd fetch`） |
+| 便携 zip + 模型（`tools/models/`） | ~15 GB | 同上；另外对方机器要有 NVIDIA 显卡 ≥6 GB |
 
 **为什么换盘符也不怕**：程序按「环境变量 → **包旁边的 `tools/`** → 常见安装位置 → 扫盘」找 Ghidra，
 按「包内的 `data/nvd/nvd.sqlite`」找 CVE 库，按「包内的 `ghidra_scripts/`」找脚本。
