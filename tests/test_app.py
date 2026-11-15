@@ -101,6 +101,10 @@ def main() -> int:
     ok &= check("勾了模型就带 --llm-model", "--llm-model" in auto3 and mdl in auto3, auto3)
     ok &= check("没勾模型就不带", "--llm-model" not in app.build_cmd("auto", "r", "o"),
                 app.build_cmd("auto", "r", "o"))
+    rep_dyn = app.build_cmd("report", "r", "o", dyn=True)
+    ok &= check("勾了动态验证就带 --dyn", "--dyn" in rep_dyn, rep_dyn)
+    ok &= check("动态验证默认带证据文件", "--dyn-check" in rep_dyn, rep_dyn)
+    ok &= check("没勾就不带 --dyn", "--dyn" not in app.build_cmd("report", "r", "o"))
 
     # 3.6) 内存预判：大模型装不下时要能提前发现，并给出同目录的小模型。
     #      这里把「权重大小 / 可用内存」换成假的数字 —— 不然测试要造一个 12 GB 的

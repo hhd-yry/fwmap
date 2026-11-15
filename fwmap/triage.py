@@ -204,6 +204,16 @@ def _gap_summary(chains: list[dict]) -> list[tuple[str, int]]:
     return [(k, n) for k, n in cnt.most_common(3) if n > 0]
 
 
+_DYN_LABEL = {
+    "exec-confirmed": "命令已执行",
+    "crash": "崩了（有崩溃证据）",
+    "no-crash": "没崩（不等于安全）",
+    "no-listener": "服务没起来（未验证）",
+    "not-run": "未执行",
+    "env-broken": "环境坏了（对照组也崩）",
+}
+
+
 def _top_picks(res: dict, limit: int = 3) -> list[dict]:
     """从所有二进制里挑出「最值得人先看」的几条链，并写清凭什么。
 
@@ -376,14 +386,20 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
                      "「跨多跳、中间过滤没核对」，摊在下面 ② 的表里，按需再翻。</div>")
 
     L.append("<h2>动态验证做了吗</h2>")
-    L.append("<div class='warn'><b>没做。</b>报告里没有任何一条是“真打过去”的结论。"
-             "原因：这一步要在 Linux 上用 qemu 把固件跑起来（绑 80 端口要 root），"
-             "现在这台机器跑不了。<br>"
-             "想看这几条到底打不打得动，把下面这些请求发到跑起来的固件上，"
-             "或者在有 qemu 的 Linux 上执行：<br>"
-             "<span class='mono small'>fwmap dyn &lt;flow.json&gt; --binary &lt;ELF&gt; "
-             "--rootfs &lt;rootfs&gt; --cmd \"id &gt; /tmp/pwned\" --check /tmp/pwned</span></div>")
-    if picks:
+    did_dyn = any(b.get("dyn") for b in res["binaries"])
+    if did_dyn:
+        L.append("<div class='note'>做了，见下面的 <b>④ 动态验证</b>。"
+                 "判定是「真发请求」得到的：先打一条无害的 <code>GET /</code> 做对照组，"
+                 "对照组就崩说明是环境问题，不算漏洞。</div>")
+    else:
+        L.append("<div class='warn'><b>没做。</b>报告里没有任何一条是“真打过去”的结论。"
+                 "要么没开 <code>--dyn</code>，要么这台机器没有对应架构的 qemu-user。"
+                 "这一步需要 Linux + qemu（绑 80 端口还要 root）。<br>"
+                 "想看这几条到底打不打得动，把下面这些请求发到跑起来的固件上，"
+                 "或者在有 qemu 的 Linux 上执行：<br>"
+                 "<span class='mono small'>fwmap dyn &lt;flow.json&gt; --binary &lt;ELF&gt; "
+                 "--rootfs &lt;rootfs&gt; --cmd \"id &gt; /tmp/pwned\" --check /tmp/pwned</span></div>")
+    if not did_dyn and picks:
         L.append("<div class='card'><b>前三条的手工验证请求（不依赖 qemu，自己发）</b>")
         for p in picks:
             reqs = _dry_requests(p["chain"], p["endpoint"])
@@ -515,12 +531,50 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
                      f"{e((c.get('sink_args') or '')[:160])}</div>")
             L.append("</div>")
 
+    # ④ 动态验证（开了 --dyn 才有）
+    dyn_bins = [b for b in res["binaries"] if b.get("dyn")]
+    if dyn_bins:
+        L.append("<h2>④ 动态验证（真发请求）</h2>")
+        L.append("<div class='note'>这一步是<b>真的把请求发出去</b>：先打一条无害的 "
+                 "<code>GET /</code> 当对照组，对照组也崩就是环境问题、不算漏洞；"
+                 "命令注入类的判定看的是「命令的副作用真的出现了」（比如 "
+                 "<code>/tmp/pwned</code> 被写出来）。</div>")
+        for b in dyn_bins:
+            d = b["dyn"]
+            if not d.get("label"):
+                L.append(f"<div class='warn'><b>{e(b['path'])}</b>：这台机器没有能跑 "
+                         f"<code>{e(d.get('arch') or '?')}</code> 的运行时（qemu-user），"
+                         "只生成了 PoC、没执行。在 Linux 上重跑才能得到真正的结论。</div>")
+                continue
+            cts = d.get("counts") or {}
+            L.append(f"<div class='small'>{e(b['path'])} · 运行时 <code>{e(d['label'])}</code> · "
+                     f"对照组 <b>{e((d.get('control') or {}).get('status', '-'))}</b> · "
+                     + " · ".join(f"{k} {v}" for k, v in sorted(cts.items())) + "</div>")
+            L.append("<table><tr><th>函数</th><th>载荷</th><th>判定</th><th>说明</th></tr>")
+            for item in d.get("results") or []:
+                fn = (item.get("chain") or {}).get("function", "")
+                for row in item.get("rows") or []:
+                    st = (row.get("result") or {}).get("status", "-")
+                    req = row.get("req") or {}
+                    detail = (row.get("result") or {}).get("detail") or ""
+                    eff = (row.get("result") or {}).get("effect") or ""
+                    L.append(f"<tr><td class='mono'>{e(fn)}</td>"
+                             f"<td class='mono small'>{e(str(req.get('param', '')))}="
+                             f"{e(str(req.get('value', ''))[:40])}</td>"
+                             f"<td class='small'><b>{e(_DYN_LABEL.get(st, st))}</b></td>"
+                             f"<td class='small mono'>{e((eff or detail)[:160])}</td></tr>")
+            L.append("</table>")
+            if cts.get("exec-confirmed"):
+                L.append("<div class='warn'><b>命令执行已确认：</b>注入的命令真的在这个固件上跑了，"
+                         "上面「说明」栏是命令的副产物（比如 /etc/passwd 的内容）。</div>")
+
     L.append("<h2>边界</h2><div class='warn'>"
              "① 分数只表示攻击面大小；② 链是“可疑”，不是“漏洞”；"
              "③ 引擎分不清“有界/无界”的所有写法，假阳性仍需人工核对；"
              "④ 只处理 ELF，PHP/lua 驱动的固件直接失明；"
              "⑤ “有鉴权”只说明存在鉴权动作，不证明实现正确；"
-             "“未见鉴权”是候选，父级函数或前置代理鉴权无法完全排除。</div>")
+             "“未见鉴权”是候选，父级函数或前置代理鉴权无法完全排除；"
+             "⑥ 动态验证的 <code>no-crash</code> 只说明“这一发没打动”，不是“安全”。</div>")
     L.append("</div>")
     return "\n".join(L)
 
@@ -579,10 +633,22 @@ def _novelty(chains: list[dict], endpoints: list[dict], ctx: list[str],
             "backend": {k: v for k, v in info.items() if k != "index"}}
 
 
+def _pick_for_dyn(chains: list[dict], limit: int) -> list[dict]:
+    """挑哪几条去打。优先「命令注入」——它的成功判定最硬（命令副作用出现了），
+    缓冲区溢出要走到崩溃才算，噪音大。"""
+    order = {"ci": 0, "cmd": 0, "bof": 1, "fmt": 2}
+    ranked = sorted(chains, key=lambda c: (order.get((c.get("sink_category") or "").lower(), 9),
+                                           c.get("hops", 1) or 1))
+    return ranked[:max(1, limit)]
+
+
 def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None,
            use_agent: bool = False, top_chains: int = 8, samples: int = 3,
            force: bool = False, use_auth: bool = True, use_verify: bool = True,
-           context: str = "", log=print) -> dict:
+           context: str = "", log=print,
+           use_dyn: bool = False, dyn_top: int = 5, dyn_port: int = 80,
+           dyn_cmd: str = "", dyn_check: str = "", dyn_payloads: int = 3,
+           dyn_timeout: float = 8.0) -> dict:
     os.makedirs(outdir, exist_ok=True)
     t0 = time.time()
 
@@ -591,8 +657,8 @@ def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None
     cands = [t for t in res.targets][:binaries]
 
     out = {"rootfs": os.path.abspath(rootfs), "time": time.strftime("%Y-%m-%d %H:%M"),
-           "agent": use_agent, "binaries": []}
-    total_chains = total_kept = total_known = 0
+           "agent": use_agent, "dyn_requested": use_dyn, "binaries": []}
+    total_chains = total_kept = total_known = total_exec = 0
     for i, t in enumerate(cands, 1):
         log(f"[2/4] {i}/{len(cands)} {t.rel_path}  —  M2 …")
         b = {"path": t.rel_path, "score": t.score, "role": t.role,
@@ -653,6 +719,42 @@ def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None
                     b["novelty_error"] = "没有可核对的链或没有可用检索源"
             except Exception as ex:                          # noqa: BLE001
                 b["novelty_error"] = str(ex)[:200]
+
+        # ④ 动态验证：把 top 几条链真发出去。
+        # 用户点「完整报告」时最想问的就是「到底打不打得动」——
+        # 以前这一步只在 autopilot 里跑，报告里永远是「未执行」。
+        if use_dyn:
+            kept = [c for c in m3["chains"] if c.get("verdict", "keep") == "keep"]
+            picks = _pick_for_dyn(kept, dyn_top)
+            log(f"        动态验证（{len(picks)} 条链，真发请求）…")
+            try:
+                from . import dyn as dyn_mod
+
+                out_dyn = dyn_mod.run_dyn(
+                    picks, t.abs_path, rootfs=rootfs, port=dyn_port,
+                    cmd=dyn_cmd or None, check=dyn_check or None,
+                    max_payloads=dyn_payloads, timeout=dyn_timeout,
+                    endpoints=b.get("endpoint_list") or [],
+                    log=lambda msg: log(msg))
+                b["dyn"] = {
+                    "label": out_dyn["label"], "arch": out_dyn["arch"],
+                    "control": out_dyn["control"], "counts": out_dyn["counts"],
+                    "results": [{"chain": {"function": (it["chain"] or {}).get("function"),
+                                           "sink": (it["chain"] or {}).get("sink"),
+                                           "sink_category": (it["chain"] or {}).get("sink_category")},
+                                 "rows": it["rows"]}
+                                for it in out_dyn["results"]],
+                }
+                if not out_dyn["label"]:
+                    log("        （这台机器没有对应架构的 qemu，只生成了 PoC）")
+                else:
+                    log("        " + " · ".join(f"{k} {v}"
+                                                for k, v in sorted(out_dyn["counts"].items())))
+                    total_exec += out_dyn["counts"].get("exec-confirmed", 0)
+            except Exception as ex:                          # noqa: BLE001
+                b["dyn_error"] = str(ex)[:200]
+                log(f"        动态验证失败：{str(ex)[:120]}")
+
         out["binaries"].append(b)
 
     rows = []
@@ -666,10 +768,11 @@ def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None
         "oneline": (f"{len(cands)} 个二进制、{total_chains} 条候选链、保留 {total_kept} 条"
                     + (f"，其中 {total_known} 条对应的函数已出现在公开 CVE 里" if total_known else "")
                     + (f"，LLM 复核 {len(rows)} 条里 {conf} 条 CONFIRMED" if rows else "")
+                    + (f"，**动态验证确认命令执行 {total_exec} 条**" if total_exec else "")
                     + (f"，未鉴权端点候选 {unprot_total} 个" if unprot_total else "")
                     + "。CONFIRMED 仍需人工核对后才能叫漏洞。"),
         "confirmed": conf, "kept": total_kept, "chains": total_chains,
-        "known": total_known,
+        "known": total_known, "exec": total_exec,
         "unprotected": unprot_total,
         "elapsed": round(time.time() - t0, 1),
     }

@@ -42,7 +42,7 @@ def child_env(model: str = "") -> dict:
 
 def build_cmd(mode: str, target: str, outdir: str, *, binary: str = "",
               port: int = 8080, llm: bool = False, limit: int | None = None,
-              model: str = "") -> list[str]:
+              model: str = "", dyn: bool = False) -> list[str]:
     """把界面上的几个选项翻译成一条命令。
 
     抽成纯函数是为了能测 —— GUI 里的东西没法断言，命令拼错了却一定会出事。
@@ -71,6 +71,8 @@ def build_cmd(mode: str, target: str, outdir: str, *, binary: str = "",
         cmd = [py, "-m", "fwmap", "triage", target, "-o", outdir]
         if llm:
             cmd.append("--agent")
+        if dyn:
+            cmd += ["--dyn", "--dyn-check", "/tmp/pwned"]
         if limit:
             cmd += ["--limit", str(limit)]
         return cmd
@@ -204,6 +206,9 @@ class App(tk.Tk):
         self.llm = tk.BooleanVar(value=False)
         ttk.Checkbutton(opts, text="用本地模型复核（慢，20 分钟起）",
                         variable=self.llm).pack(side="left", padx=(12, 0))
+        self.dyn = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts, text="动态验证（要 Linux）",
+                        variable=self.dyn).pack(side="left", padx=(10, 0))
         ttk.Label(opts, text="  端口").pack(side="left")
         self.port = tk.IntVar(value=80)          # 和命令行默认值保持一致
         ttk.Spinbox(opts, from_=80, to=65535, width=7, textvariable=self.port).pack(side="left")
@@ -368,7 +373,7 @@ class App(tk.Tk):
 
         cmd = build_cmd(mode, target, self.last_outdir or "", binary=self.binary.get().strip(),
                         port=int(self.port.get() or 8080), llm=bool(self.llm.get()),
-                        model=model)
+                        model=model, dyn=bool(self.dyn.get()))
         self._log_clear()
         self._log(f"$ {' '.join(cmd)}\n", "dim")
         if self.last_outdir:

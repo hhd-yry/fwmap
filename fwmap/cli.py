@@ -71,7 +71,12 @@ def cmd_triage(args) -> int:
                  use_agent=args.agent, top_chains=args.top_chains, samples=args.samples,
                  force=args.force, use_auth=not args.no_auth,
                  use_verify=not args.no_verify, context=args.context or "",
-                 log=log)
+                 log=log,
+                 use_dyn=getattr(args, "dyn", False),
+                 dyn_top=getattr(args, "dyn_top", 5),
+                 dyn_port=getattr(args, "dyn_port", 80),
+                 dyn_cmd=getattr(args, "dyn_cmd", "") or "",
+                 dyn_check=getattr(args, "dyn_check", "") or "")
     # 全挂也要有非 0 退出码：否则 CI / 断网验收会把「四层一层都没跑成」当成通过。
     bins = out.get("binaries") or []
     dead = [b for b in bins if b.get("error") and not b.get("chain_list")]
@@ -204,6 +209,12 @@ def main(argv: list[str] | None = None) -> int:
     tri.add_argument("--no-verify", action="store_true",
                      help="跳过新颖性核对（默认会查 CVE 库，断网时用离线库）")
     tri.add_argument("--context", help="目标厂商/型号关键词，逗号分隔（如 Edimax,BR-6478AC）")
+    tri.add_argument("--dyn", action="store_true",
+                     help="动态验证：真发请求（需要 Linux + qemu-user；Windows 上只生成 PoC）")
+    tri.add_argument("--dyn-top", type=int, default=5, help="拿前几条链去打（默认 5）")
+    tri.add_argument("--dyn-port", type=int, default=80, help="固件服务端口（默认 80）")
+    tri.add_argument("--dyn-cmd", help="命令注入类：要执行的命令（如 \"id > /tmp/pwned\"）")
+    tri.add_argument("--dyn-check", help="执行后去固件里查这个文件作为证据（如 /tmp/pwned）")
     tri.set_defaults(func=cmd_triage)
 
     s = sub.add_parser("scan", help="扫描已解包的 rootfs")

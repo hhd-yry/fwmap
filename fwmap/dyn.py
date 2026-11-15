@@ -309,32 +309,26 @@ def _read_effect(path: str) -> str:
         return ""
 
 
-def run(args) -> int:
+def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int = 80,
+            arch: str | None = None, cmd: str | None = None, check: str | None = None,
+            only: str | None = None, max_payloads: int = 3, timeout: float = 8.0,
+            dry_run: bool = False, endpoints: list[dict] | None = None,
+            log=print) -> dict:
+    """跑一轮动态验证，返回结果（不写文件）。
+
+    抽成函数是为了让 `triage` 也能用 —— 用户点「完整报告」时不该只有静态结论。
+    `twine`：CLI 的 `dyn` 命令和报告里的动态验证节都调它，行为完全一致。
+    """
     from . import poc
 
-    flow = _load(args.flow)
-    # 先把结果和二进制对上：把 A 版本的链打给 B 版本的二进制，跑出来的
-    # "没崩" 是最坏的那种结论 —— 看起来验证过了。
-    from . import integrity
-
-    if not integrity.check(flow, args.binary,
-                           allow_stale=getattr(args, "allow_stale", False),
-                           label=os.path.basename(args.flow)):
-        return 3
-
-    chains = [c for c in (flow.get("chains") or [])
+    chains = [c for c in (chains_or_flow if isinstance(chains_or_flow, list)
+                          else (chains_or_flow.get("chains") or []))
               if c.get("verdict", "keep") == "keep"]
-    if args.only:
-        chains = [c for c in chains if args.only.lower() in (c.get("function") or "").lower()]
-    if not chains:
-        print("[!] flow 里没有可用的链")
-        return 1
+    if only:
+        chains = [c for c in chains if only.lower() in (c.get("function") or "").lower()]
 
-    endpoints = []
-    if getattr(args, "m2", None):
-        endpoints = _load(args.m2).get("endpoints") or []
     ep_by_fn = {}
-    for e in endpoints:
+    for e in endpoints or []:
         fn = (e.get("handler_name") or "").strip()
         if fn and fn not in ep_by_fn:
             ep_by_fn[fn] = e
@@ -343,38 +337,34 @@ def run(args) -> int:
             if f and f not in ep_by_fn:
                 ep_by_fn[f] = e
 
-    arch = args.arch or _guess_arch(args.binary)
-    runtime = find_runtime(arch, args.rootfs, args.binary)
+    arch = arch or _guess_arch(binary)
+    runtime = find_runtime(arch, rootfs, binary)
     label = runtime["label"] if runtime else None
-    print(f"[*] 目标 {os.path.basename(args.binary)} · 架构 {arch or '?'} · "
-          f"运行时 {label or '无（只能生成 PoC）'}")
 
-    results = []
-    control = None
-    if label and not args.dry_run:
+    results, control = [], None
+    if label and not dry_run:
         # 先打一发绝对无害的请求做对照。固件在模拟器里经常因为缺 NVRAM / 缺 /dev
         # 而「一请求就崩」，那种崩溃不是我们打出来的漏洞，必须先排除掉。
-        print("    对照组（无害 GET /）… ", end="", flush=True)
-        control = run_request(poc.control_request(args.port), runtime,
-                              timeout=args.timeout)
-        print(control["status"])
+        log("    对照组（无害 GET /）… ")
+        control = run_request(poc.control_request(port), runtime, timeout=timeout)
+        log(f"      {control['status']}")
         if control["status"] == "crash":
-            print("[!] 对照组也崩了 —— 这是环境问题（缺 NVRAM/缺设备），"
-                  "不是漏洞。下面的结果只能当「未验证」。")
+            log("[!] 对照组也崩了 —— 这是环境问题（缺 NVRAM/缺设备），"
+                "不是漏洞。下面的结果只能当「未验证」。")
 
     env_broken = bool(control and control["status"] == "crash")
-    effect_path = _effect_path(args.rootfs, args.check) if args.check else None
+    effect_path = _effect_path(rootfs, check) if check else None
 
     for c in chains:
         cat = (c.get("sink_category") or "").lower()
         # 只有「命令注入 + 指定了 --cmd」才有「执行副作用」这个概念。
         # 别的链（比如 bof）如果也去查证据文件，会被上一轮留下的文件骗成假阳性。
-        can_exec = bool(getattr(args, "cmd", None)) and cat in ("ci", "cmd")
+        can_exec = bool(cmd) and cat in ("ci", "cmd")
         reqs = poc.build_requests(c, ep_by_fn.get(c.get("function") or ""),
-                                  port=args.port, cmd=getattr(args, "cmd", None))
+                                  port=port, cmd=cmd)
         rows = []
-        for r in reqs[: args.max_payloads]:
-            if args.dry_run or not label:
+        for r in reqs[:max_payloads]:
+            if dry_run or not label:
                 rows.append({"req": r, "result": {"status": "not-run"}})
                 continue
             if env_broken:
@@ -385,18 +375,61 @@ def run(args) -> int:
                     os.remove(effect_path)   # 每条请求前都清，避免上一轮残留
                 except OSError:
                     pass
-            print(f"    {c.get('function')} · {r['param']}={len(r['value'])}B … ",
-                  end="", flush=True)
-            res = run_request(r, runtime, timeout=args.timeout)
+            log(f"      {c.get('function')} · {r['param']}={len(r['value'])}B … ")
+            res = run_request(r, runtime, timeout=timeout)
             # 命令注入不一定崩，真正的证据是「命令的副作用出现了」
             if can_exec and effect_path and os.path.exists(effect_path):
                 res["status"] = "exec-confirmed"
                 res["effect"] = _read_effect(effect_path)
-            print(res["status"])
+            log(f"      {res['status']}")
             rows.append({"req": r, "result": res})
             if res["status"] in ("crash", "exec-confirmed"):
                 break                     # 有结论了，不用再加码
         results.append({"chain": c, "rows": rows})
+
+    counts: dict[str, int] = {}
+    for item in results:
+        for row in item["rows"]:
+            st = row["result"].get("status") or "?"
+            counts[st] = counts.get(st, 0) + 1
+
+    return {"results": results, "control": control, "arch": arch, "label": label,
+            "env_broken": env_broken, "counts": counts, "chains": len(chains),
+            "settings": {"port": port, "cmd": cmd, "check": check,
+                         "dry_run": dry_run, "binary": binary}}
+
+
+def run(args) -> int:
+    flow = _load(args.flow)
+    # 先把结果和二进制对上：把 A 版本的链打给 B 版本的二进制，跑出来的
+    # "没崩" 是最坏的那种结论 —— 看起来验证过了。
+    from . import integrity
+
+    if not integrity.check(flow, args.binary,
+                           allow_stale=getattr(args, "allow_stale", False),
+                           label=os.path.basename(args.flow)):
+        return 3
+
+    endpoints = []
+    if getattr(args, "m2", None):
+        endpoints = _load(args.m2).get("endpoints") or []
+
+    chains = [c for c in (flow.get("chains") or [])
+              if c.get("verdict", "keep") == "keep"]
+    if args.only:
+        chains = [c for c in chains if args.only.lower() in (c.get("function") or "").lower()]
+    if not chains:
+        print("[!] flow 里没有可用的链")
+        return 1
+
+    out = run_dyn(chains, args.binary, rootfs=getattr(args, "rootfs", None),
+                  port=args.port, arch=getattr(args, "arch", None),
+                  cmd=getattr(args, "cmd", None), check=getattr(args, "check", None),
+                  max_payloads=args.max_payloads, timeout=args.timeout,
+                  dry_run=args.dry_run, endpoints=endpoints)
+    arch, label, control, results = out["arch"], out["label"], out["control"], out["results"]
+    print(f"[*] 目标 {os.path.basename(args.binary)} · 架构 {arch or '?'} · "
+          f"运行时 {label or '无（只能生成 PoC）'}")
 
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:
