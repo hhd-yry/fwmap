@@ -67,11 +67,46 @@ def kind_of(chain: dict) -> str:
 
 
 def _looks_like_lower_bound(stmt: str) -> bool:
-    """`strlen(x) < 4` 这种是**下界**检查，只挡太短的，不构成保护。"""
+    """只挡「太短」的检查不算保护：`strlen(x) < 4`、`0 < n`、`n > 0` 都是下界。"""
     if not stmt:
         return False
+    # 常数在左边：0 < n / 1 < n / 0x10 < n
+    if re.search(r"(?:0x[0-9a-fA-F]+|\d+)\s*<\s*[A-Za-z_]\w*", stmt):
+        return True
+    # 和 0 比大小（`n > 0` / `n >= 0`）：只说明非空，不是上界
+    if re.search(r">=?\s*0\b", stmt):
+        return True
+    # 变量在左边、只跟常数比大小且比的是下界
     return bool(re.search(r"<\s*(0x[0-9a-fA-F]+|\d+)", stmt)) and \
         not re.search(r">\s*(0x[0-9a-fA-F]+|\d+)", stmt)
+
+
+def _is_sink_stmt(chain: dict, text: str) -> bool:
+    """这段代码是不是**汇自己那句**（而不是一次重新赋值）。
+
+    formStaDrvSetup 那种写法：`sprintf(buf,"echo '%d' > /tmp/x",n)` 之后 `system(buf)`。
+    模型把 sprintf 当成「变量被重新赋值」，于是这条真链被撤回 —— 其实 sprintf
+    正是污染写进缓冲的那一步。
+    """
+    sink = (chain.get("sink") or "").strip()
+    if not sink or not text:
+        return False
+    return bool(re.search(rf"\b{re.escape(sink)}\s*\(", text))
+
+
+def _reassign_breaks_taint(chain: dict, text: str) -> bool:
+    """这次「重新赋值」到底有没有把污染断掉。"""
+    if not text:
+        return False
+    if _is_sink_stmt(chain, text):          # 汇语句本身不算重新赋值
+        return False
+    if "=" in text:
+        rhs = text.split("=", 1)[1]
+        src = (chain.get("source_param") or "").strip()
+        # 赋值右边还带着源参数（累加、拼接、+1）—— 污染没断
+        if src and len(src) >= 2 and re.search(rf"\b{re.escape(src)}\b", rhs):
+            return False
+    return True
 
 
 def _sink_has_constant_size(chain: dict) -> bool:
@@ -106,9 +141,12 @@ def judge(chain: dict, res: dict) -> dict:
 
     # 归因错：变量在源和 sink 之间被重新赋值，污染根本没到 sink。
     # 这是上一轮人工判读里 TOTOLINK 那批的主要假阳性成因（4/4）。
+    # 但「重新赋值」这个判断本身也会错：Edimax 那轮 4 条 REFUTED 里 3 条引用的
+    # 其实是**汇自己那句**（sprintf 把污染写进缓冲、或 if 守卫里就调了 system），
+    # 照字面执行会把真链全撤回。所以这里再核一遍。
     if facts.get("reassigned") == "yes":
         re_ev = ev.get("reassign") or ""
-        if re_ev and not _looks_like_lower_bound(re_ev):
+        if re_ev and not _looks_like_lower_bound(re_ev) and _reassign_breaks_taint(chain, re_ev):
             return {"verdict": REFUTED, "confidence": conf, "source_kind": kind,
                     "reason": f"`{chain.get('via')}` 在 sink 之前被重新赋值，污染已断：{re_ev[:140]}"}
 

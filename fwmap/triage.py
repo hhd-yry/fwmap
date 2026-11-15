@@ -204,6 +204,111 @@ def _gap_summary(chains: list[dict]) -> list[tuple[str, int]]:
     return [(k, n) for k, n in cnt.most_common(3) if n > 0]
 
 
+def _top_picks(res: dict, limit: int = 3) -> list[dict]:
+    """从所有二进制里挑出「最值得人先看」的几条链，并写清凭什么。
+
+    为什么不直接用 M3 的顺序：那个顺序是「跳数少优先」，跟「值不值得看」
+    是两件事。这里按用户关心的四件事重新排：
+    1. 没被公开报过（novelty=unknown）比已公开优先 —— 但已公开的也要能看见，
+       所以不给 unknown 绝对优先，只加分；
+    2. 源是 HTTP 参数（不是 nvram 配置）优先；
+    3. 直接进 system/strcpy（不是诱导汇）优先；
+    4. 跳数少、端点没鉴权，加分。
+    """
+    scored: list[tuple[float, dict]] = []
+    for b in res.get("binaries") or []:
+        eps = b.get("endpoint_list") or []
+        by_fn: dict[str, dict] = {}
+        for x in eps:
+            fn = (x.get("handler_name") or "").strip()
+            if fn:
+                by_fn.setdefault(fn, x)
+            for r in x.get("refs") or []:
+                f = (r.get("in") or "").strip()
+                if f:
+                    by_fn.setdefault(f, x)
+
+        for c in b.get("chain_list") or []:
+            if c.get("verdict", "keep") != "keep":
+                continue
+            why: list[str] = []
+            score = 0.0
+
+            nov = (c.get("novelty") or {}).get("verdict")
+            if nov == "unknown":
+                score += 3
+                why.append("库里没有同函数/同路由的记录")
+            elif nov == "manual":
+                score += 1
+                why.append("函数名不可检索（FUN_），新颖性未知")
+            elif nov == "known":
+                score -= 2                    # 已公开的照样可能打到，但排后面
+
+            if c.get("weak"):
+                score -= 2
+                why.append("源是配置值（弱源），得先证明能被写脏")
+            elif c.get("induced_source"):
+                score -= 1
+                why.append("输入点是归纳出来的")
+            else:
+                score += 1
+
+            if c.get("sink_category") == "ci":
+                score += 1
+                why.append("直进命令执行")
+            elif c.get("sink_category") == "bof":
+                why.append("往固定缓冲里拷贝")
+            elif c.get("sink_category") == "fmt":
+                why.append("格式串")
+            if c.get("induced_sink"):
+                score -= 1
+                why.append("汇是诱导的，参数不一定真进去")
+            if c.get("sink_verified") is False:
+                score -= 2
+                why.append("汇点核对失败：实参里找不到这条数据")
+
+            hops = c.get("hops", 1) or 1
+            if hops == 1:
+                score += 1
+            elif hops >= 3:
+                score -= 1
+                why.append(f"跨 {hops} 跳")
+
+            ep = by_fn.get(c.get("function", ""))
+            if ep:
+                st = (ep.get("auth") or {}).get("status")
+                if st == "unprotected":
+                    score += 2
+                    why.append("端点未见鉴权")
+                elif st == "protected":
+                    score -= 1
+                    why.append("端点有鉴权动作")
+                else:
+                    why.append("端点鉴权未知")
+
+            if not why:
+                why.append("没什么特别的加分项，排在后面")
+            scored.append((score, {"chain": c, "endpoint": ep, "why": why[:3],
+                                   "binary": b.get("path", "")}))
+
+    scored.sort(key=lambda x: -x[0])
+    return [x[1] for x in scored[:limit]]
+
+
+def _dry_requests(chain: dict, endpoint: dict | None, port: int = 80) -> str:
+    """按链生成一份「手工验证用」的 HTTP 请求（不发出去，只显示）。"""
+    try:
+        from . import poc
+
+        reqs = poc.build_requests(chain, endpoint, port=port)
+        if not reqs:
+            return ""
+        return "\n\n".join(poc.render_http(r).decode("utf-8", "replace").replace("\r\n", "\n")
+                           for r in reqs[:1])
+    except Exception:                                        # noqa: BLE001
+        return ""
+
+
 def render(res: dict) -> str:
     e = html.escape
     L = []
@@ -231,6 +336,64 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
 
     st = res["stats"]
     L.append("<div class='card'><b>一句话</b>：" + e(st["oneline"]) + "</div>")
+
+    # 用户最想知道的一句话是「哪条」，而不是「有 40 条」。
+    # 这里把链按「值得人看」的程度排一遍，直接点名 3 条 + 说清凭什么。
+    picks = _top_picks(res)
+    L.append("<h2>先看这几条</h2>")
+    if not picks:
+        L.append("<div class='warn'>没有排出候选：要么没出链，要么链全被判成已公开/证据不足。"
+                 "这不是“没有漏洞”，是“这一轮没筛出值得人看的”。</div>")
+    else:
+        L.append("<div class='note'><b>如果只来得及看三条，看这三个。</b>"
+                 "排序依据：没被公开报过 &gt; 输入是 HTTP 参数 &gt; 直接进命令执行/拷贝 "
+                 "&gt; 跳数少 &gt; 端点没鉴权。这只是“优先顺序”，不是“这就是漏洞”。</div>")
+        L.append("<table><tr><th>#</th><th>函数 / 端点</th><th>源 → 汇</th>"
+                 "<th>新颖性</th><th>凭什么排前面</th></tr>")
+        for i, p in enumerate(picks, 1):
+            c, ep = p["chain"], p["endpoint"]
+            where = (f"<span class='mono'>{e(ep['uri'])}</span>"
+                     if ep else "<span class='small'>端点未定位</span>")
+            L.append(f"<tr><td>{i}</td>"
+                     f"<td><b class='mono'>{e(c.get('function', '?'))}</b><br>{where}</td>"
+                     f"<td class='mono small'>{e(c.get('source_api', ''))}"
+                     f"({e(c.get('source_param') or '')}) → {e(c.get('sink', ''))}"
+                     f" [{e(c.get('sink_category', ''))}]</td>"
+                     f"<td class='small'>{_nov_cell(c)}</td>"
+                     f"<td class='small'>{e('；'.join(p['why']))}</td></tr>")
+        L.append("</table>")
+        if not any(p["endpoint"] for p in picks):
+            # 端点全没定位时，下面表格里的「端点」栏是空的 —— 这容易被当成「没有端点」。
+            L.append("<div class='warn small' style='margin-top:6px'>"
+                     "注意：M2 在这台固件上没把 URL 对上处理函数（策略 <code>strcmp-chain</code>），"
+                     "所以下面「端点」一栏基本是空的、鉴权那一层也等于没跑。"
+                     "这不代表这些函数不可达，只代表<b>这一轮没证出来</b>。</div>")
+        # 其余的那些为什么不推荐，用一句话交代，别让人以为漏了
+        rest = st.get("kept", 0) - len(picks)
+        if rest > 0:
+            L.append(f"<div class='small' style='margin-top:6px'>剩下的 {rest} 条："
+                     "多数是「公共 CVE 里已有同函数」或「源是配置值（弱源）」或"
+                     "「跨多跳、中间过滤没核对」，摊在下面 ② 的表里，按需再翻。</div>")
+
+    L.append("<h2>动态验证做了吗</h2>")
+    L.append("<div class='warn'><b>没做。</b>报告里没有任何一条是“真打过去”的结论。"
+             "原因：这一步要在 Linux 上用 qemu 把固件跑起来（绑 80 端口要 root），"
+             "现在这台机器跑不了。<br>"
+             "想看这几条到底打不打得动，把下面这些请求发到跑起来的固件上，"
+             "或者在有 qemu 的 Linux 上执行：<br>"
+             "<span class='mono small'>fwmap dyn &lt;flow.json&gt; --binary &lt;ELF&gt; "
+             "--rootfs &lt;rootfs&gt; --cmd \"id &gt; /tmp/pwned\" --check /tmp/pwned</span></div>")
+    if picks:
+        L.append("<div class='card'><b>前三条的手工验证请求（不依赖 qemu，自己发）</b>")
+        for p in picks:
+            reqs = _dry_requests(p["chain"], p["endpoint"])
+            if reqs:
+                L.append("<div class='small' style='margin-top:8px'>"
+                         f"<b class='mono'>{e(p['chain'].get('function', ''))}</b></div>")
+                L.append(f"<pre class='small mono' style='background:#f9fafb;padding:8px;"
+                         f"border-radius:4px;overflow:auto'>{e(reqs)}</pre>")
+        L.append("<div class='small'>这些只是“按链猜出来的请求”，不是已验通的 PoC。"
+                 "发之前先确认路径和参数名对得上。</div></div>")
 
     # 第一层
     L.append("<h2>① 该先看哪些文件（M1）</h2>")
