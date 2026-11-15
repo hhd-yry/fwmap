@@ -255,14 +255,16 @@ def extract(binary: str, ghidra_home: str | None = None, timeout: int = TIMEOUT)
     strategy = max((e["strategy"] for e in endpoints.values()), default="unknown",
                    key=lambda s: {"inventory": 0, "unknown": 0, "prefix": 1,
                                   "strcmp-chain": 2, "registration": 3}.get(s, 0))
-    return {
+    from . import integrity
+
+    return integrity.stamp({
         "binary": binary,
         "strategy": strategy,
         "endpoints": sorted(endpoints.values(), key=lambda x: x["uri"]),
         "ghidra": home,
         "returncode": 0,
         "stderr_tail": "",
-    }
+    }, binary)
 
 
 def main(argv: list[str] | None = None) -> int:

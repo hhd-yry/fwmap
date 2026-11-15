@@ -177,6 +177,33 @@ def _nov_cell(c: dict) -> str:
     return "<span style='color:#dc2626'>查询失败</span>"
 
 
+def _gap_cell(c: dict) -> str:
+    """链的「还缺什么」单元格：只露第一条，后面几条用 +N 表示。
+
+    缺口清单来自 m3flow.missing_evidence，这里只负责显示 ——
+    不合并、不改写，免得报告和 flow.json 各说一套。
+    """
+    gaps = c.get("missing_evidence") or []
+    if not gaps:
+        return "—"
+    head = html.escape(str(gaps[0]))
+    if len(gaps) == 1:
+        return head
+    rest = html.escape("；".join(str(x) for x in gaps[1:]))
+    return f"{head}<span class='small' title='{rest}'> +{len(gaps) - 1}</span>"
+
+
+def _gap_summary(chains: list[dict]) -> list[tuple[str, int]]:
+    """这批链最常见的缺口（按条数降序，取前 3）。没有缺口清单就返回空。"""
+    from collections import Counter
+
+    cnt: Counter = Counter()
+    for c in chains:
+        for g in c.get("missing_evidence") or []:
+            cnt[g] += 1
+    return [(k, n) for k, n in cnt.most_common(3) if n > 0]
+
+
 def render(res: dict) -> str:
     e = html.escape
     L = []
@@ -262,7 +289,7 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
                  + "。</div>")
         if kept:
             L.append("<table><tr><th>函数</th><th>源</th><th>汇</th><th>跳</th>"
-                     "<th>新颖性</th><th>说明</th></tr>")
+                     "<th>新颖性</th><th>还缺什么</th><th>说明</th></tr>")
             for c in kept[:15]:
                 flags = []
                 if c.get("weak"):
@@ -276,8 +303,14 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
                          f"<td class='mono'>{e(c['sink'])}<span class='small'> [{e(c.get('sink_category',''))}]</span></td>"
                          f"<td>{c.get('hops',1)}</td>"
                          f"<td class='small'>{_nov_cell(c)}</td>"
+                         f"<td class='small'>{_gap_cell(c)}</td>"
                          f"<td class='small'>{e('、'.join(flags)) or '—'}</td></tr>")
             L.append("</table>")
+            gaps = _gap_summary(kept)
+            if gaps:
+                L.append("<div class='small' style='margin-top:6px'><b>这批链共同的缺口：</b>"
+                         + "；".join(f"{e(k)}（{n} 条）" for k, n in gaps)
+                         + "。缺口不等于失败——它说明这条链证到了哪一步，以及下一刀该切哪儿。</div>")
             ns = b.get("novelty_summary")
             if ns:
                 L.append("<div class='small' style='margin-top:6px'>新颖性核对："

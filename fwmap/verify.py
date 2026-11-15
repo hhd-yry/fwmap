@@ -456,6 +456,29 @@ def open_backend(source: str = "auto", db: str | None = None,
     return _make_searcher(ns)
 
 
+def _stale_ok(args, path: str, log=print) -> bool:
+    """核对输入结果和它分析的二进制是不是同一个东西。
+
+    只有「哈希对不上」会拦；结果里没哈希 / 二进制不在，都只提示 ——
+    见 integrity 模块的说明。
+    """
+    from . import integrity
+
+    try:
+        obj = _read_json(path)
+    except Exception:                                   # noqa: BLE001
+        return True                                     # 读不了上面已经报过错了
+    if "binaries" in obj:                               # triage 的 report.json
+        ok = True
+        for b in obj.get("binaries") or []:
+            if not integrity.check(b, allow_stale=getattr(args, "allow_stale", False),
+                                   log=log, label=os.path.basename(path)):
+                ok = False
+        return ok
+    return integrity.check(obj, allow_stale=getattr(args, "allow_stale", False),
+                           log=log, label=os.path.basename(path))
+
+
 def run(args) -> int:
     try:
         chains, endpoints = load(args.input)
@@ -467,6 +490,11 @@ def run(args) -> int:
     except ValueError as e:
         print(f"[!] 输入不是合法 JSON：{args.input}\n    {str(e)[:120]}")
         return 2
+
+    # 先确认这份结果还是那个二进制的，再谈新颖性 —— 对着错版本的链查 CVE，
+    # 查出来的东西再准也没意义。
+    if not _stale_ok(args, args.input):
+        return 3
 
     if not chains:
         print("[!] 输入里没有链（是不是用的 scan 报告？verify 需要 m3 --flow 或 triage 的 report.json）")

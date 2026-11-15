@@ -21,7 +21,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "源是弱源（配置值），得先证明这个配置能被远程写脏",
+        "没做动态验证：还没真跑一发看命令到底执不执行"
+      ]
     },
     {
       "function": "FUN_000a88a4",
@@ -40,7 +44,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做动态验证：还没真跑一发看命令到底执不执行"
+      ]
     },
     {
       "function": "FUN_000a88a4",
@@ -59,7 +67,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做动态验证：还没真跑一发看命令到底执不执行"
+      ]
     },
     {
       "function": "formSetIptv",
@@ -79,7 +91,12 @@
       "hops": 1,
       "sink_verified": true,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "汇点是按形状归纳的，没确认参数真的进了 shell/拷贝",
+        "没做动态验证：还没真跑一发看命令到底执不执行"
+      ]
     },
     {
       "function": "formSetIptv",
@@ -99,7 +116,12 @@
       "hops": 1,
       "sink_verified": true,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "汇点是按形状归纳的，没确认参数真的进了 shell/拷贝",
+        "没做动态验证：还没真跑一发看命令到底执不执行"
+      ]
     },
     {
       "function": "FUN_0007b8e4",
@@ -118,7 +140,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做动态验证：还没真跑一发看命令到底执不执行"
+      ]
     },
     {
       "function": "formSetSambaConf",
@@ -137,7 +163,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做动态验证：还没真跑一发看命令到底执不执行"
+      ]
     },
     {
       "function": "formsetUsbUnload",
@@ -156,7 +186,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做动态验证：还没真跑一发看命令到底执不执行"
+      ]
     },
     {
       "function": "formWriteFacMac",
@@ -175,7 +209,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做动态验证：还没真跑一发看命令到底执不执行"
+      ]
     },
     {
       "function": "formWifiBasicSet",
@@ -194,7 +232,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formWifiBasicSet",
@@ -213,7 +255,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "fromSetWirelessRepeat",
@@ -232,7 +278,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "fromSetWirelessRepeat",
@@ -251,7 +301,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formSetPPTPServer",
@@ -270,7 +324,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "FUN_000a88a4",
@@ -289,7 +347,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formSetClientState",
@@ -308,7 +370,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formSetSpeedWan",
@@ -327,7 +393,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "FUN_0007b8e4",
@@ -346,7 +416,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formExpandDlnaFile",
@@ -365,7 +439,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formExpandDlnaFile",
@@ -384,7 +462,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "GetParentControlInfo",
@@ -403,7 +485,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "GetParentControlInfo",
@@ -422,7 +508,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "setSchedWifi",
@@ -441,7 +531,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "setSchedWifi",
@@ -460,7 +554,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "fromSetSysTime",
@@ -479,7 +577,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "form_fast_setting_wifi_set",
@@ -498,7 +600,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formDLNAserver",
@@ -517,7 +623,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "fromNatStaticSetting",
@@ -536,7 +646,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "fromAddressNat",
@@ -555,7 +669,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "fromAddressNat",
@@ -574,7 +692,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "fromDhcpListClient",
@@ -593,7 +715,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "fromDhcpListClient",
@@ -612,7 +738,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formWifiWpsStart",
@@ -631,7 +761,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formWifiWpsOOB",
@@ -650,7 +784,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formWifiWpsOOB",
@@ -669,7 +807,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formSetClientState",
@@ -689,7 +831,12 @@
       "hops": 2,
       "helper": "FUN_0007cf80",
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 2 跳，中间函数的过滤没有逐条核对",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "FUN_0007b8e4",
@@ -709,7 +856,12 @@
       "hops": 2,
       "helper": "FUN_0007b28c",
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 2 跳，中间函数的过滤没有逐条核对",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formSetDeviceName",
@@ -729,7 +881,12 @@
       "hops": 2,
       "helper": "FUN_000c6d58",
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 2 跳，中间函数的过滤没有逐条核对",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "fromSetWifiGusetBasic",
@@ -749,7 +906,12 @@
       "hops": 3,
       "helper": "FUN_0007ec40",
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 3 跳，中间函数的过滤没有逐条核对",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "fromSetWifiGusetBasic",
@@ -769,7 +931,12 @@
       "hops": 3,
       "helper": "FUN_0007ec40",
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 3 跳，中间函数的过滤没有逐条核对",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "fromAdvSetLanip",
@@ -789,7 +956,12 @@
       "hops": 3,
       "helper": "initIpAddrInfo",
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 3 跳，中间函数的过滤没有逐条核对",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "GetParentControlInfo",
@@ -809,7 +981,12 @@
       "hops": 3,
       "helper": "FUN_000831b8",
       "verdict": "keep",
-      "reason": ""
+      "reason": "",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 3 跳，中间函数的过滤没有逐条核对",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formSetPPTPServer",
@@ -828,7 +1005,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "sscanf-input-not-destination"
+      "reason": "sscanf-input-not-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formSetPPTPServer",
@@ -847,7 +1028,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "sscanf-input-not-destination"
+      "reason": "sscanf-input-not-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "setSmartPowerManagement",
@@ -866,7 +1051,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "sscanf-input-not-destination"
+      "reason": "sscanf-input-not-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formSetClientState",
@@ -885,7 +1074,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-in-destination"
+      "reason": "taint-in-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "form_fast_setting_internet_set",
@@ -904,7 +1097,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formSetFirewallCfg",
@@ -923,7 +1120,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "length-checked"
+      "reason": "length-checked",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formAddMacfilterRule",
@@ -942,7 +1143,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formDelMacfilterRule",
@@ -961,7 +1166,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "fromSysToolChangePwd",
@@ -980,7 +1189,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formGetSystemStatus",
@@ -999,7 +1212,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-in-destination"
+      "reason": "taint-in-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formGetSystemStatus",
@@ -1018,7 +1235,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "fromGetWirelessRepeat",
@@ -1037,7 +1258,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-in-destination"
+      "reason": "taint-in-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "fromGetWirelessRepeat",
@@ -1056,7 +1281,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-in-destination"
+      "reason": "taint-in-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formGetPPTPClient",
@@ -1075,7 +1304,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-in-destination"
+      "reason": "taint-in-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formGetDeviceDetail",
@@ -1094,7 +1327,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formSetCfm",
@@ -1113,7 +1350,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formSetCfm",
@@ -1132,7 +1373,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formSetCfm",
@@ -1151,7 +1396,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "fromAdvSetLanip",
@@ -1170,7 +1419,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "fromAdvSetLanip",
@@ -1189,7 +1442,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "fromAdvSetLanip",
@@ -1208,7 +1465,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "fromAdvSetLanip",
@@ -1227,7 +1488,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "fromAdvSetLanip",
@@ -1246,7 +1511,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "fromAdvSetLanip",
@@ -1265,7 +1534,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "setSchedWifi",
@@ -1284,7 +1557,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "sscanf-input-not-destination"
+      "reason": "sscanf-input-not-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "fromSetSysTime",
@@ -1303,7 +1580,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "sscanf-input-not-destination"
+      "reason": "sscanf-input-not-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "form_fast_setting_wifi_set",
@@ -1322,7 +1603,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-in-destination"
+      "reason": "taint-in-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "form_fast_setting_wifi_set",
@@ -1341,7 +1626,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "sscanf-input-not-destination"
+      "reason": "sscanf-input-not-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formDLNAserver",
@@ -1360,7 +1649,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-in-destination"
+      "reason": "taint-in-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formSetRebootTimer",
@@ -1379,7 +1672,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "sscanf-input-not-destination"
+      "reason": "sscanf-input-not-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formWifiWpsStart",
@@ -1398,7 +1695,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-in-destination"
+      "reason": "taint-in-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formSetParentControlEnable",
@@ -1417,7 +1718,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formsetNotUpgrade",
@@ -1436,7 +1741,11 @@
       "confidence": "low",
       "hops": 1,
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "FUN_0007b8e4",
@@ -1456,7 +1765,12 @@
       "hops": 2,
       "helper": "FUN_0007b28c",
       "verdict": "demoted",
-      "reason": "taint-in-destination"
+      "reason": "taint-in-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 2 跳，中间函数的过滤没有逐条核对",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formAddMacfilterRule",
@@ -1476,7 +1790,12 @@
       "hops": 2,
       "helper": "FUN_000c7684",
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "源是弱源（配置值），得先证明这个配置能被远程写脏",
+        "跨 2 跳，中间函数的过滤没有逐条核对",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formAddMacfilterRule",
@@ -1496,7 +1815,12 @@
       "hops": 2,
       "helper": "FUN_000c4888",
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 2 跳，中间函数的过滤没有逐条核对",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formDelMacfilterRule",
@@ -1516,7 +1840,12 @@
       "hops": 2,
       "helper": "FUN_000c56cc",
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 2 跳，中间函数的过滤没有逐条核对",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formDelMacfilterRule",
@@ -1536,7 +1865,12 @@
       "hops": 2,
       "helper": "FUN_000c56cc",
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "源是弱源（配置值），得先证明这个配置能被远程写脏",
+        "跨 2 跳，中间函数的过滤没有逐条核对",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formGetSystemStatus",
@@ -1556,7 +1890,12 @@
       "hops": 2,
       "helper": "FUN_00036ca4",
       "verdict": "demoted",
-      "reason": "taint-in-destination"
+      "reason": "taint-in-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 2 跳，中间函数的过滤没有逐条核对",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formSetDeviceName",
@@ -1576,7 +1915,12 @@
       "hops": 2,
       "helper": "FUN_000c6d58",
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 2 跳，中间函数的过滤没有逐条核对",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "formSetDeviceName",
@@ -1596,7 +1940,12 @@
       "hops": 2,
       "helper": "FUN_000c6d58",
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 2 跳，中间函数的过滤没有逐条核对",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "fromSetWifiGusetBasic",
@@ -1616,7 +1965,12 @@
       "hops": 3,
       "helper": "FUN_0007ec40",
       "verdict": "demoted",
-      "reason": "taint-not-in-format"
+      "reason": "taint-not-in-format",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 3 跳，中间函数的过滤没有逐条核对",
+        "没做格式串验证：%x 泄漏没测"
+      ]
     },
     {
       "function": "fromAdvSetLanip",
@@ -1636,7 +1990,12 @@
       "hops": 3,
       "helper": "initIpAddrInfo",
       "verdict": "demoted",
-      "reason": "bounded-copy"
+      "reason": "bounded-copy",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 3 跳，中间函数的过滤没有逐条核对",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "GetParentControlInfo",
@@ -1656,7 +2015,12 @@
       "hops": 3,
       "helper": "FUN_000831b8",
       "verdict": "demoted",
-      "reason": "taint-in-destination"
+      "reason": "taint-in-destination",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 3 跳，中间函数的过滤没有逐条核对",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     },
     {
       "function": "formSetSafeWanWebMan",
@@ -1676,7 +2040,12 @@
       "hops": 3,
       "helper": "initIpAddrInfo",
       "verdict": "demoted",
-      "reason": "bounded-copy"
+      "reason": "bounded-copy",
+      "missing_evidence": [
+        "输入点是按形状归纳的，没确认它真能拿到 HTTP 参数",
+        "跨 3 跳，中间函数的过滤没有逐条核对",
+        "没做溢出验证：崩溃阈值和 PC 可控都没测"
+      ]
     }
   ],
   "summary": {
@@ -1684,5 +2053,7 @@
     "strong": 0,
     "weak": 42,
     "demoted": 45
-  }
+  },
+  "binary_sha256": "e9d1b92527c57f24d141fa10a7377237de66a9c4f9c1b83223adfa8f1f1db11d",
+  "binary_size": 991088
 }

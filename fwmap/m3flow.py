@@ -674,12 +674,53 @@ def _rule_check(chain: dict) -> tuple[str, str]:
     return "keep", ""
 
 
+def missing_evidence(chain: dict) -> list[str]:
+    """这条链**没有**证到什么 —— 按缺口逐条列出来，不是结论。
+
+    为什么要有这个字段：我们的报告一直只给 verdict（keep/demoted），
+    读者没法判断"这条到底证到哪一步"。同学的工具把 missing_evidence 做成
+    一等字段（她的报告里明明白白列 4 条缺什么），答辩时那一节最有用 ——
+    「我知道我不知道什么」比「我觉得这是漏洞」可信得多。
+
+    这里只写**静态证据覆盖不到的东西**，不写"没跑 dyn"之外的流程性废话：
+    每条都必须对应链上某个具体环节。
+    """
+    g: list[str] = []
+    if chain.get("induced_source"):
+        g.append("输入点是按形状归纳的，没确认它真能拿到 HTTP 参数")
+    if chain.get("induced_sink"):
+        g.append("汇点是按形状归纳的，没确认参数真的进了 shell/拷贝")
+    if chain.get("sink_verified") is False:
+        g.append("汇点核对失败：实参里根本找不到这条数据")
+    elif chain.get("sink_verified") is None and chain.get("induced_sink"):
+        g.append("汇点没核对：污染落在第几个实参没定位到")
+    if chain.get("weak"):
+        g.append("源是弱源（配置值），得先证明这个配置能被远程写脏")
+    if chain.get("bounded_copy"):
+        g.append("拷贝有长度上限，得确认上限能不能绕过")
+    hops = chain.get("hops", 1)
+    if hops and hops > 1:
+        g.append(f"跨 {hops} 跳，中间函数的过滤没有逐条核对")
+    # 不写「置信度低所以守卫没解析好」——confidence 在我们的代码里表示**来源强度**
+    # （弱源/归纳源），和守卫解析得怎么样没关系。那种话听着专业，其实是编的。
+    if not (chain.get("guard") or "").strip():
+        g.append("链上没有守卫代码（前置语句没取到），有没有过滤得看反编译原文")
+    cat = chain.get("sink_category")
+    g.append({
+        "ci": "没做动态验证：还没真跑一发看命令到底执不执行",
+        "bof": "没做溢出验证：崩溃阈值和 PC 可控都没测",
+        "fmt": "没做格式串验证：%x 泄漏没测",
+    }.get(cat, "没做动态验证"))
+    return g
+
+
 def apply_rules(chains: list[dict]) -> list[dict]:
-    """给每条链打 verdict/reason。不删——删了人就看不见了，只降序。"""
+    """给每条链打 verdict/reason，外加「还缺什么」。不删——删了人就看不见了，只降序。"""
     for c in chains:
         verdict, reason = _rule_check(c)
         c["verdict"] = verdict
         c["reason"] = reason
+        c["missing_evidence"] = missing_evidence(c)
     return chains
 
 
@@ -1125,8 +1166,11 @@ def run_flow(binary: str, candidates: list[dict], ghidra_home: str | None = None
     uniq.sort(key=lambda x: (x["verdict"] != "keep",
                              x["weak"] or x.get("induced_source"),
                              x["sink_category"] != "ci", x["hops"]))
-    return {"binary": binary, "decompiled": len(blocks),
-            "helpers": len(hblocks), "sink_verified": verified, "chains": uniq}
+    from . import integrity
+
+    return integrity.stamp({"binary": binary, "decompiled": len(blocks),
+                            "helpers": len(hblocks), "sink_verified": verified,
+                            "chains": uniq}, binary)
 
 
 # ---------------------------------------------------------------- 诱导汇确认

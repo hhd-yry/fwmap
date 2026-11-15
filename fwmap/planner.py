@@ -227,6 +227,17 @@ def _absorb(state: dict, tool: str, res: dict) -> None:
         state.setdefault("plugins_done", set()).add(tool)
 
 
+def _gap_summary(chains: list[dict]) -> list[tuple[str, int]]:
+    """这批链最常见的缺口。和 triage 的 _gap_summary 同一份语义，只是不依赖 html。"""
+    from collections import Counter
+
+    cnt: Counter = Counter()
+    for c in chains:
+        for g in c.get("missing_evidence") or []:
+            cnt[g] += 1
+    return [(k, n) for k, n in cnt.most_common(3) if n > 0]
+
+
 def _report(state: dict, elapsed: float) -> dict:
     stat = state.get("verify_stat") or {}
     known = stat.get("known", 0)
@@ -266,6 +277,9 @@ def _report(state: dict, elapsed: float) -> dict:
 
     if state.get("check_clean") is False:
         lines.append("[!] 解包自检有阻断项，先看 `fwmap check` 的输出再采信后面的结论")
+    gaps = _gap_summary(state.get("chains") or [])
+    if gaps:
+        lines.append("还缺什么（按条数）：" + "；".join(f"{k}（{n} 条）" for k, n in gaps))
     return {"ok": True, "state": state, "lines": lines,
             "history": state["history"], "elapsed": round(elapsed, 1)}
 

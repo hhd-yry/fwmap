@@ -312,7 +312,17 @@ def _read_effect(path: str) -> str:
 def run(args) -> int:
     from . import poc
 
-    chains = [c for c in (_load(args.flow).get("chains") or [])
+    flow = _load(args.flow)
+    # 先把结果和二进制对上：把 A 版本的链打给 B 版本的二进制，跑出来的
+    # "没崩" 是最坏的那种结论 —— 看起来验证过了。
+    from . import integrity
+
+    if not integrity.check(flow, args.binary,
+                           allow_stale=getattr(args, "allow_stale", False),
+                           label=os.path.basename(args.flow)):
+        return 3
+
+    chains = [c for c in (flow.get("chains") or [])
               if c.get("verdict", "keep") == "keep"]
     if args.only:
         chains = [c for c in chains if args.only.lower() in (c.get("function") or "").lower()]

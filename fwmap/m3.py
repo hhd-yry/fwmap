@@ -317,6 +317,15 @@ def main(argv: list[str] | None = None) -> int:
                       f"-> {c['sink']}[{c['sink_category']}]")
         f["summary"] = {"kept": len(kept), "strong": len(strong), "weak": len(weakc),
                         "demoted": len(demoted)}
+        gaps: dict[str, int] = {}
+        for c in kept:
+            for g in c.get("missing_evidence") or []:
+                gaps[g] = gaps.get(g, 0) + 1
+        if gaps:
+            top = sorted(gaps.items(), key=lambda kv: -kv[1])[:3]
+            print("    ── 这批链共同的缺口（不是结论，是下一刀该切哪儿）──")
+            for g, n in top:
+                print(f"    {n:>3} 条  {g}")
         if args.output:
             jout = os.path.splitext(args.output)[0] + ".flow.json"
             with open(jout, "w", encoding="utf-8") as fh:

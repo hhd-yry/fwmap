@@ -18,25 +18,17 @@ verify / dyn。
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import time
+
+from .integrity import sha256_of
 
 __all__ = ["to_mango", "sha256_of", "run"]
 
 # 她的 prompt 里会把 candidate 整个塞给模型，所以这里给个上限，
 # 别让一段 3 KB 的守卫字符串把上下文吃掉。
 _MAX_TEXT = 300
-
-
-def sha256_of(path: str) -> str:
-    """算固件的 sha256。她的 agent 会拿这个和 IDA 里打开的库比对。"""
-    h = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _clip(text, limit: int = _MAX_TEXT) -> str:

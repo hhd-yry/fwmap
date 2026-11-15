@@ -244,6 +244,8 @@ def main(argv: list[str] | None = None) -> int:
     v.add_argument("--delay", type=float, default=6.5, help="在线模式的请求间隔秒（NVD 无 key 有限流）")
     v.add_argument("--refresh", action="store_true", help="忽略缓存重新查询（仅在线模式）")
     v.add_argument("--dry-run", action="store_true", help="只列出关键词，不发请求")
+    v.add_argument("--allow-stale", action="store_true",
+                   help="结果里的二进制哈希对不上也照跑（默认拒绝，因为对着错版本查 CVE 没有意义）")
     v.set_defaults(func=lambda a: __import__("fwmap.verify", fromlist=["run"]).run(a))
 
     nv = sub.add_parser("nvd", help="离线 NVD 索引：下载 / 建索引 / 查询（断网验收靠它）")
@@ -289,6 +291,8 @@ def main(argv: list[str] | None = None) -> int:
     dy.add_argument("--max-payloads", type=int, default=3, help="每条链最多试几个载荷")
     dy.add_argument("--timeout", type=float, default=8.0, help="单个请求等待秒数")
     dy.add_argument("--dry-run", action="store_true", help="只生成 PoC，不执行")
+    dy.add_argument("--allow-stale", action="store_true",
+                    help="flow 里的二进制哈希对不上也照打（默认拒绝：把 A 的链接打给 B 是最坏的结论）")
     dy.add_argument("-o", "--out", help="输出 markdown")
     dy.add_argument("--json", help="输出 JSON")
     dy.set_defaults(func=lambda a: __import__("fwmap.dyn", fromlist=["run"]).run(a))
