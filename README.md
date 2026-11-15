@@ -412,20 +412,21 @@ NVRAM（`/dev/mtdblock0` ← `etc/config.bin`）怎么补，见
 Ghidra 启动时会自动把包里的 `tools/jdk*` 设成 `JAVA_HOME` —— 所以对方机器上装着 Java 17
 也不会把 Ghidra 12.2 顶掉（我们这台就是系统 Java 17 + 包内 JDK 25）。
 
-**仍然写死的只有三处**，且都不影响主流程：
+**仍然写死的只有两处**，且都不影响主流程：
 
 | 位置 | 写死什么 | 影响 |
 |---|---|---|
-| `fwmap/agent/llm.py` | 开发机那两份路径（`libs-bnb`、模型）**排在最后**，目录不存在就跳过 | 无。前面有 `FWMAP_AGENT_LIBS` 和包内 `tools/pylibs`、`tools/models/` |
-| `fwmap/m2.py` | `C:/D:/E:` 盘根扫 `ghidra*` | 只是兜底候选，扫不到就算了 |
-| — | 没有别的绝对路径了 | — |
+| `fwmap/agent/llm.py` | 开发机原来那份依赖目录 `C:\deepseek\libs-bnb`，**排在最后**，不存在就跳过 | 无。前面有 `FWMAP_AGENT_LIBS` 和包内 `tools/pylibs` |
+| `fwmap/m2.py` | `C:` `D:` `E:` 盘根扫 `ghidra*` | 只是最后的兜底候选，扫不到就算了 |
+
+除此之外没有绝对路径：Ghidra / JDK / CVE 库 / Ghidra 脚本全部按包目录找。
 
 ### 模型怎么办（三选一）
 
-| 方案 | 体积 | 需要什么 | 少了它会怎样 |
+| 方案 | 磁盘 | 需要什么 | 少了它会怎样 |
 |---|---|---|---|
 | **不带模型**（推荐给验收/答辩） | 0 | 无 | 工具照跑。「模型只取证、规则裁决」——LLM 复核只是把证据读给人看，不改变结论 |
-| 带上 7B | 5.6 GB | NVIDIA ≥6 GB 显存 + torch/transformers/bitsandbytes/accelerate（约 2.5 GB） | — |
+| 带上 7B | **14.2 GB**（4-bit 加载后占约 5.6 GB 显存） | NVIDIA ≥6 GB 显存 + torch/transformers/bitsandbytes/accelerate（约 2.5 GB） | — |
 | 换成 1.5B | 1.6 GB | CPU 也能跑，慢 | 复核质量下降，但结论仍由规则给 |
 
 放模型的两种姿势：

@@ -26,9 +26,10 @@ import subprocess
 import sys
 import tempfile
 
-# Ghidra 安装位置：环境变量 → 这些常见位置 → 包旁边的 tools\ghidra*
+# Ghidra 安装位置：环境变量 → 这些常见位置 → 包旁边的 tools\ghidra* → 盘符根部扫
+# 这里**只放通用位置**，不要写某台机器的绝对路径 —— 换台机器它就是一条废候选，
+# 而真正该命中的是包内 tools/（便携包解压到哪都能用）。
 DEFAULT_HOMES = [
-    r"C:\deepseek\tools\ghidra_12.2_PUBLIC",
     r"C:\ghidra",
     r"C:\tools\ghidra",
     "/opt/ghidra",
