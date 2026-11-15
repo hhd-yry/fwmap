@@ -954,9 +954,8 @@ def decompile(ghidra_home: str, binary: str, targets: list[str], timeout: int | 
     from .m2 import run_ghidra, TIMEOUT as _GHIDRA_TIMEOUT
     if timeout is None:
         timeout = _GHIDRA_TIMEOUT
-    headless = os.path.join(ghidra_home, "support", "analyzeHeadless.bat")
-    if not os.path.exists(headless):
-        headless = os.path.join(ghidra_home, "support", "analyzeHeadless")
+    from .m2 import headless_path as _hp
+    headless = _hp(ghidra_home)
     base = os.environ.get("FWMAP_M2_DIR") or os.path.join(os.getcwd(), "fwmap-m2")
     os.makedirs(base, exist_ok=True)
     run_dir = os.path.join(base, f"flow-{os.getpid()}-{os.getpid() % 97}")

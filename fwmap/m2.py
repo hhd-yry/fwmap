@@ -133,6 +133,67 @@ def jdk_home() -> str:
     return ""
 
 
+_PERMS_FIXED: set[str] = set()
+
+
+def ensure_posix_perms(home: str, posix: bool | None = None) -> list[str]:
+    """从 Windows 拷过来的 Ghidra：脚本和原生程序**都没有执行位**。
+
+    Linux 上的症状很迷惑人：
+    - `analyzeHeadless` 跑不起来 → `Exec format error (errno 8)`
+    - 反编译器 `decompile` / `sleigh` 没执行位 → 不报错，但反编译**0 个函数**
+      （表现为「一条链都没有」，很容易被当成「这个固件很干净」）
+    所以启动前自检一遍，缺了就补上。
+
+    `posix` 只为测试留的（默认看 os.name）。
+    """
+    posix = (os.name != "nt") if posix is None else posix
+    if not posix or home in _PERMS_FIXED:
+        return []
+    _PERMS_FIXED.add(home)
+    fixed: list[str] = []
+    targets: list[str] = []
+    sup = os.path.join(home, "support")
+    if os.path.isdir(sup):
+        for name in os.listdir(sup):
+            if name.startswith("analyzeHeadless") or name.endswith(".sh"):
+                targets.append(os.path.join(sup, name))
+    # 原生程序都放在 */os/linux*_*/* 里（decompile、sleigh、demangler…）
+    for base, _dirs, files in os.walk(home):
+        if f"{os.sep}os{os.sep}linux" in base:
+            targets.extend(os.path.join(base, f) for f in files)
+    for p in targets:
+        try:
+            mode = os.stat(p).st_mode
+            if mode & 0o111:
+                continue
+            os.chmod(p, mode | 0o755)
+            fixed.append(p)
+        except OSError:
+            pass
+    return fixed
+
+
+def headless_path(home: str) -> str:
+    """按平台挑 Ghidra 的启动脚本。
+
+    不要「先试 .bat，不存在再试无后缀」：把装了 Windows 版的 Ghidra 目录拷到 Linux
+    （或者反过来）时两个文件都在，先试 .bat 会让 Linux 去执行批处理文件，
+    报 `Exec format error（errno 8）` —— 看起来像 Ghidra 坏了，其实是挑错了启动脚本。
+    """
+    names = ("analyzeHeadless.bat", "analyzeHeadless") if os.name == "nt" else \
+            ("analyzeHeadless", "analyzeHeadless.bat")
+    fixed = ensure_posix_perms(home)
+    if fixed:
+        print(f"[!] Ghidra 里有 {len(fixed)} 个文件没有执行位（像是从 Windows 拷过来的），"
+              f"已自动补上：{os.path.basename(fixed[0])} 等", flush=True)
+    for name in names:
+        p = os.path.join(home, "support", name)
+        if os.path.exists(p):
+            return p
+    raise RuntimeError(f"Ghidra 目录里没有 analyzeHeadless：{os.path.join(home, 'support')}")
+
+
 def _kill_tree(pid: int) -> None:
     """连子进程一起杀。analyzeHeadless.bat 会派 cmd → java，只杀 bat 会留下 java 占着工程锁。"""
     if os.name == "nt":
@@ -202,9 +263,8 @@ def extract(binary: str, ghidra_home: str | None = None, timeout: int = TIMEOUT)
     home = ghidra_home or find_ghidra()
     if not home:
         raise RuntimeError("找不到 Ghidra：设置 GHIDRA_HOME 环境变量")
-    headless = os.path.join(home, "support", "analyzeHeadless.bat")
-    if not os.path.exists(headless):
-        headless = os.path.join(home, "support", "analyzeHeadless")
+    # 按平台挑启动脚本（见 headless_path 的说明）
+    headless = headless_path(home)
 
     # Ghidra 不允许工程路径里出现 "." 开头的目录名，所以工作目录叫 fwmap-m2。
     # 每次用独立目录：triage 会在同一进程里连续跑多个二进制，

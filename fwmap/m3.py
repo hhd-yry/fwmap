@@ -43,9 +43,8 @@ def induce(binary: str, ghidra_home: str | None = None, min_calls: int = 3,
     home = ghidra_home or find_ghidra()
     if not home:
         raise RuntimeError("找不到 Ghidra：设置 GHIDRA_HOME 环境变量")
-    headless = os.path.join(home, "support", "analyzeHeadless.bat")
-    if not os.path.exists(headless):
-        headless = os.path.join(home, "support", "analyzeHeadless")
+    from .m2 import headless_path as _hp
+    headless = _hp(home)
 
     base = os.environ.get("FWMAP_M2_DIR") or os.path.join(os.getcwd(), "fwmap-m2")
     os.makedirs(base, exist_ok=True)
@@ -87,9 +86,8 @@ def induce_sinks(binary: str, ghidra_home: str | None = None, max_depth: int = 1
     home = ghidra_home or find_ghidra()
     if not home:
         raise RuntimeError("找不到 Ghidra：设置 GHIDRA_HOME 环境变量")
-    headless = os.path.join(home, "support", "analyzeHeadless.bat")
-    if not os.path.exists(headless):
-        headless = os.path.join(home, "support", "analyzeHeadless")
+    from .m2 import headless_path as _hp
+    headless = _hp(home)
 
     base = os.environ.get("FWMAP_M2_DIR") or os.path.join(os.getcwd(), "fwmap-m2")
     os.makedirs(base, exist_ok=True)
@@ -122,9 +120,8 @@ def extract(binary: str, ghidra_home: str | None = None, timeout: int = _GHIDRA_
     home = ghidra_home or find_ghidra()
     if not home:
         raise RuntimeError("找不到 Ghidra：设置 GHIDRA_HOME 环境变量")
-    headless = os.path.join(home, "support", "analyzeHeadless.bat")
-    if not os.path.exists(headless):
-        headless = os.path.join(home, "support", "analyzeHeadless")
+    from .m2 import headless_path as _hp
+    headless = _hp(home)
 
     cat = catalog_path()
     if profile:

@@ -126,9 +126,8 @@ def _parse_callers(out: str, names: list[str]) -> dict[str, list[str]]:
 
 def _callers(home: str, binary: str, names: list[str], timeout: int = TIMEOUT) -> dict[str, list[str]]:
     """一次 Ghidra 调用列出多个函数的调用者，返回 {函数名: [调用者名]}。"""
-    headless = os.path.join(home, "support", "analyzeHeadless.bat")
-    if not os.path.exists(headless):
-        headless = os.path.join(home, "support", "analyzeHeadless")
+    from .m2 import headless_path as _hp
+    headless = _hp(home)
     base = os.environ.get("FWMAP_M2_DIR") or os.path.join(os.getcwd(), "fwmap-m2")
     run_dir = os.path.join(base, f"auth-{os.getpid()}")
     proj_dir = os.path.join(run_dir, "proj")
