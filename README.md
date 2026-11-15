@@ -452,6 +452,24 @@ set FWMAP_LLM_MODEL=D:\models\Qwen2.5-Coder-7B-Instruct
 （加载是流式读 safetensors，不需要把 14 GB 全驻留）。
 偶尔仍可能因为内存压力崩成 `0xC0000005`（退出码 3221225477）——重试一次，或先关掉别的程序。
 
+### 虚拟机里跑不了模型？用宿主的
+
+VMware 里是虚拟显卡（没有 CUDA），内存也通常只给 8 GB —— 跑不了 7B。
+但宿主机有显卡，让它当模型服务器就行：
+
+```bash
+# 宿主机（有 GPU 的那台）
+python -m fwmap serve --host 0.0.0.0 --port 11434
+
+# 虚拟机里：模型 + qemu 动态验证就能在同一次运行里都要
+export FWMAP_LLM_ENDPOINT=http://192.168.8.1:11434/v1
+python -m fwmap triage /path/to/rootfs -o out --agent --dyn
+```
+
+`serve` 是 OpenAI 兼容的（`/v1/chat/completions`、`/v1/models`），
+所以换成 Ollama / vLLM 也行，只要把 `FWMAP_LLM_ENDPOINT` 指过去。
+Windows 防火墙记得放行端口，或者在 VMware 里用 host-only 网段。
+
 验证是否被认到：`python -m fwmap doctor --agent`（或界面里按「检查环境」，勾上模型那个框）。
 
 ---

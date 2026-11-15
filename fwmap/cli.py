@@ -356,6 +356,13 @@ def main(argv: list[str] | None = None) -> int:
     tl = sub.add_parser("tools", help="列出智能体能调用的工具（名字 / 用途 / 参数）")
     tl.set_defaults(func=cmd_tools)
 
+    sv = sub.add_parser("serve", help="把本机模型变成 HTTP 服务，给别的机器用（如虚拟机）")
+    sv.add_argument("--host", default="127.0.0.1",
+                    help="监听地址（默认只本机；给虚拟机用得用 0.0.0.0）")
+    sv.add_argument("--port", type=int, default=11434, help="端口（默认 11434）")
+    sv.add_argument("--model", help="模型目录（默认按 FWMAP_LLM_MODEL / 包内 tools/models 找）")
+    sv.set_defaults(func=lambda a: __import__("fwmap.agent.serve", fromlist=["run"]).run(a))
+
     ga = sub.add_parser("app", help="打开图形界面（选一个目录，按一个按钮）")
     ga.add_argument("rootfs", nargs="?", help="解包后的根目录（可选，界面里也能选）")
     ga.set_defaults(func=lambda a: __import__("fwmap.app", fromlist=["run"]).run(

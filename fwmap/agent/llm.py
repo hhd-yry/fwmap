@@ -221,8 +221,39 @@ def load(model_path: str | None = None):
     return _MODEL, _TOK
 
 
+def endpoint() -> str:
+    """远程模型服务地址（OpenAI 兼容）。设了它就不在本进程里加载模型。
+
+    为什么要有这个：虚拟机里跑不了大模型 —— VMware 是虚拟显卡、没有 CUDA，
+    8 GB 内存也装不下 7B。但宿主机有 4060。让宿主起一个 `fwmap serve`，
+    VM 里的 triage 用 `FWMAP_LLM_ENDPOINT` 指过去，就能同时要「GPU 模型 + qemu 动态验证」。
+    """
+    return (os.environ.get("FWMAP_LLM_ENDPOINT") or "").strip().rstrip("/")
+
+
+def _chat_http(messages: list[dict], max_new_tokens: int, temperature: float) -> str:
+    import urllib.request
+
+    payload = json.dumps({
+        "model": os.environ.get("FWMAP_LLM_NAME") or "fwmap-local",
+        "messages": messages,
+        "max_tokens": max_new_tokens,
+        "temperature": temperature,
+    }).encode("utf-8")
+    req = urllib.request.Request(endpoint() + "/chat/completions", payload,
+                                 {"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=1800) as resp:
+        data = json.loads(resp.read().decode("utf-8", "replace"))
+    try:
+        return data["choices"][0]["message"]["content"] or ""
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(f"模型服务返回的格式不对：{str(data)[:200]}")
+
+
 def chat(messages: list[dict], max_new_tokens: int = 320, temperature: float = 0.0,
          model_path: str | None = None) -> str:
+    if endpoint():                     # 远程模式：本进程不加载模型
+        return _chat_http(messages, max_new_tokens, temperature)
     model, tok = load(model_path)
     torch = _patch_torch()
     text = tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
