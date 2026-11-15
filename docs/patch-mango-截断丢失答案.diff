@@ -1,0 +1,34 @@
+diff --git a/agent.py b/agent.py
+index 4144ebb..601fd5e 100644
+--- a/agent.py
++++ b/agent.py
+@@ -37,6 +37,9 @@ decompile(address), callers(address), callees(address), xrefs(address),
+ function_by_name(name), function_at(address), strings(query).
+ Use function_at to resolve a call-site address to its containing function before callers/callees.
+ Request callers/xrefs to examine inputs and guards.
++An observation marked "truncated" was cut: absence inside it is NOT evidence of absence.
++Never claim a definition/registration is missing when the tool result was truncated;
++say it was not observed and request a narrower query instead.
+ If unable to resolve questions, finish with insufficient_evidence.'''
+ 
+ TOOLS = {
+@@ -150,8 +153,18 @@ def bounded(evidence, limit):
+     if "result" in item:
+         text = json.dumps(item["result"], ensure_ascii=False)
+         if len(text) > limit:
+-            item["result"] = text[:limit]
++            # 只留前 limit 个字符会切掉答案。真实例子：formDefineTendDa 的反编译有 8369 字，
++            # 注册行 websFormDefine("telnet", TendaTelnet) 排在 7299 字处，
++            # 截到 7000 正好停在 line 95，而它在 line 99 —— 模型于是写
++            # 「截断输出中未出现 TendaTelnet」，一个真实候选被判成证据不足。
++            # 首尾各留一部分，中间标出省略了多少。
++            head = int(limit * 0.6)
++            tail = limit - head
++            item["result"] = (text[:head]
++                              + "\n...[中间省略 %d 字符]...\n" % (len(text) - limit)
++                              + text[-tail:])
+             item["truncated"] = True
++            item["original_chars"] = len(text)
+     return item
+ 
+ def request_packet(state, config):

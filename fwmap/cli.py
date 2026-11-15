@@ -350,6 +350,16 @@ def main(argv: list[str] | None = None) -> int:
     ex.add_argument("--all", action="store_true", help="连被降级的链也导出（默认只要 keep）")
     ex.set_defaults(func=lambda a: __import__("fwmap.export_mango", fromlist=["run"]).run(a))
 
+    mg = sub.add_parser("merge", help="把别人的审查结论并进来（目前支持 Mango-Agent 的 report.json）")
+    mg.add_argument("--from", dest="frm", choices=["mango"], default="mango",
+                    help="来源格式（默认 mango）")
+    mg.add_argument("input", help="她的 report.json，或整个 runs/<时间>-<id>/ 目录")
+    mg.add_argument("-o", "--output", help="输出 markdown（默认 <报告>.merged.md）")
+    mg.add_argument("--db", help="离线库路径（默认 包目录/data/nvd/nvd.sqlite）")
+    mg.add_argument("--limit", type=int, default=6, help="每个名字最多列几条 CVE")
+    mg.add_argument("--no-query", action="store_true", help="只做结构解析，不查库")
+    mg.set_defaults(func=lambda a: __import__("fwmap.merge_mango", fromlist=["run"]).run(a))
+
     st = sub.add_parser("setup", help="下载安装 Ghidra / JDK（换机器后先跑这个）")
     st.add_argument("--ghidra", action="store_true", help="只装 Ghidra")
     st.add_argument("--jdk", action="store_true", help="只装 JDK")
