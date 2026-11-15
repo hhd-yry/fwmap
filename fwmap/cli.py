@@ -345,6 +345,11 @@ def main(argv: list[str] | None = None) -> int:
     tl = sub.add_parser("tools", help="列出智能体能调用的工具（名字 / 用途 / 参数）")
     tl.set_defaults(func=cmd_tools)
 
+    ga = sub.add_parser("app", help="打开图形界面（选一个目录，按一个按钮）")
+    ga.add_argument("rootfs", nargs="?", help="解包后的根目录（可选，界面里也能选）")
+    ga.set_defaults(func=lambda a: __import__("fwmap.app", fromlist=["run"]).run(
+        [a.rootfs] if getattr(a, "rootfs", None) else []))
+
     ex = sub.add_parser("export", help="把链导出成别人的工具能直接吃的格式（目前是 Mango）")
     ex.add_argument("--to", choices=["mango"], default="mango", help="目标格式（默认 mango）")
     ex.add_argument("input", help="m3 --flow 的 flow.json")
