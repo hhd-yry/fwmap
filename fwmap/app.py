@@ -291,20 +291,23 @@ class App(tk.Tk):
             return True
         ok, msg = looks_like_model(path)
         if ok:
-            note = ""
+            note, colour = "", "#027a48"
             try:
-                from .agent.llm import fit_model, model_size_gb
+                from .agent.llm import fit_model
 
                 fits, why, alt = fit_model(path)
                 if not fits:
-                    note = f" · 内存可能不够（{model_size_gb(path):.1f} GB）"
+                    note = f" · 用不了：{why}"
                     if alt:
-                        note += f"，运行时会自动改用 {Path(alt).name}"
+                        note += f"，可改用 {Path(alt).name}"
+                    colour = "#b42318"
+                elif "偏紧" in why:
+                    note = " · 内存偏紧，崩了就重试一次或先关掉别的程序"
+                    colour = "#b45309"
             except Exception:                               # noqa: BLE001
                 pass
             self.model_hint.configure(
-                text=f"可以：{msg}{note} · 要用就勾上「用本地模型复核」",
-                foreground="#b45309" if note else "#027a48")
+                text=f"可以：{msg}{note} · 要用就勾上「用本地模型复核」", foreground=colour)
         else:
             self.model_hint.configure(text=msg, foreground="#b42318")
         if not ok and not quiet:

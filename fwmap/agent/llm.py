@@ -132,22 +132,42 @@ def free_ram_gb() -> float:
 def fit_model(path: str) -> tuple[bool, str, str]:
     """这个模型装得下吗？返回 (能不能装, 说明, 同目录里更小的替代)。
 
-    为什么要预判：7B 的权重 14 GB，加载时要从内存里过一遍。内存不够时
-    PyTorch/bitsandbytes 不会抛 Python 异常，而是**直接访问违例把进程干掉**
-    （退出码 3221225477）。用户看到的就一句「退出码 3221225477」，完全不知道发生了什么。
+    判断标准（实测过 7B 在 8 GB 显卡上能跑）：
+    - **显存**是硬门槛：4-bit 大约占 size/4 + 1 GB，装不进就是装不进；
+    - **内存**只是"偏紧"：加载时是流式读 safetensors，不需要把 14 GB 全驻留。
+      内存紧张时可能偶发访问违例（退出码 3221225477），但**不该拦着不让试** ——
+      拦掉一个本来能跑的模型，比偶尔崩一次更糟。
     """
     if not path or not os.path.isdir(path):
         return False, f"模型目录不存在：{path}", ""
     size = model_size_gb(path)
     if size <= 0:
         return False, f"{os.path.basename(path)} 里没有权重文件（*.safetensors / *.bin）", ""
+
+    need_vram = size / 4 + 1.0
+    total_vram = 0.0
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            total_vram = torch.cuda.get_device_properties(0).total_memory / (1 << 30)
+    except Exception:                                   # noqa: BLE001
+        pass
+
+    if total_vram and need_vram > total_vram * 0.95:
+        alt = _smaller_sibling(path, budget=(total_vram * 0.95 - 1.0) * 4)
+        return False, (f"{os.path.basename(path)} 4-bit 需要约 {need_vram:.1f} GB 显存，"
+                       f"这台只有 {total_vram:.1f} GB"), alt
+
     free = free_ram_gb()
+    if free and size > free * 4:
+        alt = _smaller_sibling(path, budget=free * 4)
+        return False, (f"{os.path.basename(path)} 有 {size:.1f} GB，当前只有 {free:.1f} GB 内存可用，"
+                       f"差得太远"), alt
     if free and size > free * 1.5:
-        alt = _smaller_sibling(path, budget=free * 1.5)
-        why = (f"{os.path.basename(path)} 有 {size:.1f} GB，加载需要约 {size * 1.2:.0f} GB 内存，"
-               f"当前只有 {free:.1f} GB 可用")
-        return False, why, alt
-    return True, f"{os.path.basename(path)}（{size:.1f} GB）", ""
+        return True, (f"{os.path.basename(path)}（{size:.1f} GB）内存偏紧"
+                      f"（可用 {free:.1f} GB），加载时如果崩了就重试一次或先关掉别的程序"), ""
+    return True, f"{os.path.basename(path)}（{size:.1f} GB，显存约需 {need_vram:.1f} GB）", ""
 
 
 def _smaller_sibling(path: str, budget: float) -> str:
@@ -184,6 +204,8 @@ def load(model_path: str | None = None):
             path = alt
         else:
             raise RuntimeError(f"{why}。换小一点的模型，或者不加 --llm/--agent 只跑规则。")
+    elif why:
+        print(f"[llm] {why}", flush=True)
     t0 = time.time()
     _TOK = _load_tokenizer(path)
     bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",

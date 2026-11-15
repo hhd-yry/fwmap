@@ -117,7 +117,7 @@ def main() -> int:
     try:
         LLM.free_ram_gb = lambda: 5.0
         LLM.model_size_gb = lambda p: {
-            os.path.normpath(big): 14.2, os.path.normpath(mdl): 1.2,
+            os.path.normpath(big): 80.0, os.path.normpath(mdl): 1.2,
         }.get(os.path.normpath(p), 0.0)
 
         fits, why, alt = LLM.fit_model(mdl)
@@ -127,6 +127,12 @@ def main() -> int:
         ok &= check("给出的是同目录里能装下的那个", alt2 == mdl, alt2)
         ok &= check("说明里带 GB 数字", "GB" in why2, why2)
         ok &= check("不存在的目录不崩", LLM.fit_model(os.path.join(tmp, "nope"))[0] is False)
+
+        # 14 GB 的 7B：8 GB 显卡是够的（实测峰值 5.6 GB），只该提示"内存偏紧"，不该拦
+        LLM.model_size_gb = lambda p: 14.2 if os.path.normpath(p) == os.path.normpath(mdl) else 0
+        fits3, why3, _ = LLM.fit_model(mdl)
+        ok &= check("7B 在 8 GB 卡上不该被拦", fits3 is True, (fits3, why3))
+        ok &= check("内存紧张时要给出提示", "偏紧" in why3 or "显存" in why3, why3)
     finally:
         LLM.model_size_gb, LLM.free_ram_gb = real_size, real_free
     cfg_path = os.path.join(tmp, "config.json")
