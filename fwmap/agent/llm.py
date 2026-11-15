@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
@@ -87,6 +88,85 @@ def _load_tokenizer(path: str):
         return tok
 
 
+def model_size_gb(path: str) -> float:
+    """模型权重有多大（GB）。没有权重文件返回 0。"""
+    total = 0
+    for pat in ("*.safetensors", "*.bin"):
+        for f in glob.glob(os.path.join(path, pat)):
+            try:
+                total += os.path.getsize(f)
+            except OSError:
+                pass
+    return total / (1 << 30)
+
+
+def free_ram_gb() -> float:
+    """当前可用物理内存。查不到就返回 0（当作"不知道"，不要让检查变成误报）。"""
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            class _MemStatus(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+            st = _MemStatus()
+            st.dwLength = ctypes.sizeof(st)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st))
+            return st.ullAvailPhys / (1 << 30)
+        with open("/proc/meminfo", encoding="ascii", errors="replace") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) / (1 << 20)
+    except Exception:                                   # noqa: BLE001
+        pass
+    return 0.0
+
+
+def fit_model(path: str) -> tuple[bool, str, str]:
+    """这个模型装得下吗？返回 (能不能装, 说明, 同目录里更小的替代)。
+
+    为什么要预判：7B 的权重 14 GB，加载时要从内存里过一遍。内存不够时
+    PyTorch/bitsandbytes 不会抛 Python 异常，而是**直接访问违例把进程干掉**
+    （退出码 3221225477）。用户看到的就一句「退出码 3221225477」，完全不知道发生了什么。
+    """
+    if not path or not os.path.isdir(path):
+        return False, f"模型目录不存在：{path}", ""
+    size = model_size_gb(path)
+    if size <= 0:
+        return False, f"{os.path.basename(path)} 里没有权重文件（*.safetensors / *.bin）", ""
+    free = free_ram_gb()
+    if free and size > free * 1.5:
+        alt = _smaller_sibling(path, budget=free * 1.5)
+        why = (f"{os.path.basename(path)} 有 {size:.1f} GB，加载需要约 {size * 1.2:.0f} GB 内存，"
+               f"当前只有 {free:.1f} GB 可用")
+        return False, why, alt
+    return True, f"{os.path.basename(path)}（{size:.1f} GB）", ""
+
+
+def _smaller_sibling(path: str, budget: float) -> str:
+    """同目录里找一个装得下的（优先最大的那个装得下的）。"""
+    parent = os.path.dirname(os.path.abspath(path))
+    best, best_size = "", 0.0
+    try:
+        for name in os.listdir(parent):
+            p = os.path.join(parent, name)
+            if p == os.path.abspath(path) or not os.path.isdir(p):
+                continue
+            s = model_size_gb(p)
+            if 0 < s <= budget and s > best_size:
+                best, best_size = p, s
+    except OSError:
+        pass
+    return best
+
+
 def load(model_path: str | None = None):
     """懒加载（全局只加载一次）。"""
     global _MODEL, _TOK
@@ -96,6 +176,14 @@ def load(model_path: str | None = None):
     from transformers import AutoModelForCausalLM, BitsAndBytesConfig
 
     path = find_model(model_path)
+    ok, why, alt = fit_model(path)
+    if not ok:
+        if alt:
+            print(f"[llm] {why}", flush=True)
+            print(f"[llm] 改用同目录里装得下的：{os.path.basename(alt)}", flush=True)
+            path = alt
+        else:
+            raise RuntimeError(f"{why}。换小一点的模型，或者不加 --llm/--agent 只跑规则。")
     t0 = time.time()
     _TOK = _load_tokenizer(path)
     bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",

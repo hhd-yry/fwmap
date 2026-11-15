@@ -291,8 +291,20 @@ class App(tk.Tk):
             return True
         ok, msg = looks_like_model(path)
         if ok:
+            note = ""
+            try:
+                from .agent.llm import fit_model, model_size_gb
+
+                fits, why, alt = fit_model(path)
+                if not fits:
+                    note = f" · 内存可能不够（{model_size_gb(path):.1f} GB）"
+                    if alt:
+                        note += f"，运行时会自动改用 {Path(alt).name}"
+            except Exception:                               # noqa: BLE001
+                pass
             self.model_hint.configure(
-                text=f"可以：{msg} · 要用就勾上「用本地模型复核」", foreground="#027a48")
+                text=f"可以：{msg}{note} · 要用就勾上「用本地模型复核」",
+                foreground="#b45309" if note else "#027a48")
         else:
             self.model_hint.configure(text=msg, foreground="#b42318")
         if not ok and not quiet:
@@ -429,6 +441,16 @@ class App(tk.Tk):
         else:
             self.status.set(f"退出码 {code}，用时 {secs:.0f} 秒 —— 看上面的日志")
             self._log(f"\n[!] 退出码 {code}\n", "err")
+            # Windows 上原生崩溃的退出码，光看数字没法猜。最常见的那个其实是内存不够：
+            # 加载大模型时 PyTorch/bitsandbytes 不抛异常，直接访问违例杀掉进程。
+            hint = {
+                3221225477: ("0xC0000005 访问违例。加载大模型时内存不足最常见 —— "
+                             "换小一点的模型（同目录的 1.5B），或者不勾「用本地模型复核」。"),
+                3221225725: "0xC00000FD 栈溢出。",
+                3221225781: "0xC0000135 找不到 DLL —— agent 依赖没装好（torch/bitsandbytes）。",
+            }.get(code)
+            if hint:
+                self._log(f"    {hint}\n", "err")
         self.b_report_open.configure(state="normal" if report else "disabled")
 
     def _find_report(self) -> str:
