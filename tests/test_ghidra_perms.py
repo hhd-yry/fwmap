@@ -40,6 +40,18 @@ def main() -> int:
 
     fixed = M.ensure_posix_perms(tmp, posix=True)
     ok &= check("补了执行位", len(fixed) >= 2, fixed)
+
+    # CRLF 的 shebang 也要修：症状和缺执行位一模一样（Exec format error）
+    crlf = os.path.join(tmp, "support", "launch.sh")
+    with open(crlf, "wb") as fh:
+        fh.write(b"#!/usr/bin/env bash\r\necho hi\r\n")
+    ok &= check("CRLF 脚本被修成 LF", M._fix_script_crlf(crlf) is True)
+    ok &= check("修完之后没有 \\r", b"\r" not in open(crlf, "rb").read())
+    ok &= check("已经是 LF 的不动", M._fix_script_crlf(crlf) is False)
+    jar = os.path.join(tmp, "x.jar")
+    with open(jar, "wb") as fh:
+        fh.write(b"PK\x03\x04\r\nnot a script")
+    ok &= check("二进制文件绝不碰", M._fix_script_crlf(jar) is False)
     if os.name != "nt":
         # Windows 没有执行位这回事（chmod 只改只读属性），这几条只在 POSIX 上有意义
         ok &= check("启动脚本可执行", os.access(headless, os.X_OK))

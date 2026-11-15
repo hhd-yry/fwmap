@@ -136,6 +136,28 @@ def jdk_home() -> str:
 _PERMS_FIXED: set[str] = set()
 
 
+def _fix_script_crlf(path: str) -> bool:
+    """把 Windows 换行改成 Unix 换行（只对脚本，绝不碰 jar/二进制）。
+
+    `#!/usr/bin/env bash\\r` 在 Linux 上会报 `Exec format error` —— 症状和"没有执行位"
+    一模一样，但原因完全不同。两个都得修，否则从 Windows 拷过来的 Ghidra 永远起不来。
+    """
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(2048)
+        if b"\r\n" not in head:
+            return False
+        if not (head.startswith(b"#!") or path.endswith(".sh")):
+            return False
+        with open(path, "rb") as fh:
+            data = fh.read()
+        with open(path, "wb") as fh:
+            fh.write(data.replace(b"\r\n", b"\n"))
+        return True
+    except OSError:
+        return False
+
+
 def ensure_posix_perms(home: str, posix: bool | None = None) -> list[str]:
     """从 Windows 拷过来的 Ghidra：脚本和原生程序**都没有执行位**。
 
@@ -165,12 +187,15 @@ def ensure_posix_perms(home: str, posix: bool | None = None) -> list[str]:
     for p in targets:
         try:
             mode = os.stat(p).st_mode
-            if mode & 0o111:
-                continue
-            os.chmod(p, mode | 0o755)
-            fixed.append(p)
+            if not mode & 0o111:
+                os.chmod(p, mode | 0o755)
+                fixed.append(p)
         except OSError:
             pass
+    # 换行也要修：CRLF 的 shebang 一样起不来（症状和缺执行位一模一样）
+    for p in targets:
+        if _fix_script_crlf(p) and p not in fixed:
+            fixed.append(p)
     return fixed
 
 

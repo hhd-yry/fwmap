@@ -409,6 +409,26 @@ NVRAM（`/dev/mtdblock0` ← `etc/config.bin`）怎么补，见
 | 便携 zip（带 `tools/` + `data/nvd/nvd.sqlite`） | 885 MB | 解压到任意路径，双击 `开始.cmd`。Ghidra、JDK 25、42 万条 CVE 库都在里面（不含 NVD 原始年包，要重建索引再 `nvd fetch`） |
 | 便携 zip + 模型（`tools/models/`） | ~14.5 GB | 同上；另外对方机器要有 NVIDIA 显卡 ≥6 GB |
 
+### 这个包能在哪些系统上跑
+
+| 系统 | 能不能 | 说明 |
+|---|---|---|
+| **Windows 10/11 + Python 3.11+** | ✅ 开箱即用 | 包里带的是 Windows 版 JDK 25，双击 `开始.cmd` 就行 |
+| Linux / 虚拟机 | ⚠️ 要换一个 JDK | 包里 JDK 是 Windows 版；换成本机的 JDK 25（Temurin），代码会自动修 Ghidra 脚本的执行位和 CRLF |
+| macOS | ❌ | 没试过，Ghidra 本身有 mac 版但没打包 |
+
+Linux 上补 JDK 的最小步骤：
+
+```bash
+# 1. 装 JDK 25（Ubuntu：TUNA 镜像，约 135 MB）
+wget https://mirrors.tuna.tsinghua.edu.cn/Adoptium/25/jdk/x64/linux/\
+OpenJDK25U-jdk_x64_linux_hotspot_25.0.5_8.tar.gz
+tar -xzf OpenJDK25U-*.tar.gz -C fwmap-tool/tools/ && rm -rf fwmap-tool/tools/jdk-25.0.5+8_windows
+
+# 2. 首次运行时，代码会自动把 Ghidra 脚本的执行位和 CRLF 修好
+python3 -m fwmap doctor
+```
+
 **为什么换盘符也不怕**：程序按「环境变量 → **包旁边的 `tools/`** → 常见安装位置 → 扫盘」找 Ghidra，
 按「包内的 `data/nvd/nvd.sqlite`」找 CVE 库，按「包内的 `ghidra_scripts/`」找脚本。
 Ghidra 启动时会自动把包里的 `tools/jdk*` 设成 `JAVA_HOME` —— 所以对方机器上装着 Java 17
