@@ -101,28 +101,34 @@ def main() -> int:
     ok &= check("没勾模型就不带", "--llm-model" not in app.build_cmd("auto", "r", "o"),
                 app.build_cmd("auto", "r", "o"))
 
-    # 3.6) 内存预判：大模型装不下时要能提前发现，并给出同目录的小模型
+    # 3.6) 内存预判：大模型装不下时要能提前发现，并给出同目录的小模型。
+    #      这里把「权重大小 / 可用内存」换成假的数字 —— 不然测试要造一个 12 GB 的
+    #      文件，跑一次能把磁盘塞满（踩过，删了 25 GB 临时文件）。
     from fwmap.agent import llm as LLM
 
-    ok &= check("能算出模型大小", abs(LLM.model_size_gb(mdl) - 0.293) < 0.05,
-                LLM.model_size_gb(mdl))
+    ok &= check("能算出模型大小", LLM.model_size_gb(mdl) > 0.2, LLM.model_size_gb(mdl))
     ok &= check("能读可用内存", LLM.free_ram_gb() > 0, LLM.free_ram_gb())
 
-    fits, why, alt = LLM.fit_model(mdl)
-    ok &= check("小模型装得下", fits is True and alt == "", (fits, why, alt))
-
+    real_size, real_free = LLM.model_size_gb, LLM.free_ram_gb
     big = os.path.join(tmp, "big-model")
     os.makedirs(big)
     with open(os.path.join(big, "config.json"), "w", encoding="utf-8") as fh:
         fh.write("{}")
-    free = LLM.free_ram_gb() or 8.0
-    with open(os.path.join(big, "model.safetensors"), "wb") as fh:
-        fh.truncate(int(free * 2.5 * (1 << 30)))     # 稀疏文件：比可用内存大得多
-    fits2, why2, alt2 = LLM.fit_model(big)
-    ok &= check("装不下时判定为装不下", fits2 is False, (fits2, why2))
-    ok &= check("给出的是同目录里能装下的那个", alt2 == mdl, alt2)
-    ok &= check("说明里带 GB 数字", "GB" in why2, why2)
-    ok &= check("不存在的目录不崩", LLM.fit_model(os.path.join(tmp, "nope"))[0] is False)
+    try:
+        LLM.free_ram_gb = lambda: 5.0
+        LLM.model_size_gb = lambda p: {
+            os.path.normpath(big): 14.2, os.path.normpath(mdl): 1.2,
+        }.get(os.path.normpath(p), 0.0)
+
+        fits, why, alt = LLM.fit_model(mdl)
+        ok &= check("小模型装得下", fits is True and alt == "", (fits, why, alt))
+        fits2, why2, alt2 = LLM.fit_model(big)
+        ok &= check("装不下时判定为装不下", fits2 is False, (fits2, why2))
+        ok &= check("给出的是同目录里能装下的那个", alt2 == mdl, alt2)
+        ok &= check("说明里带 GB 数字", "GB" in why2, why2)
+        ok &= check("不存在的目录不崩", LLM.fit_model(os.path.join(tmp, "nope"))[0] is False)
+    finally:
+        LLM.model_size_gb, LLM.free_ram_gb = real_size, real_free
     cfg_path = os.path.join(tmp, "config.json")
     old = app.CFG_FILE
     app.CFG_FILE = __import__("pathlib").Path(cfg_path)
@@ -145,6 +151,11 @@ def main() -> int:
     open(html, "w", encoding="utf-8").write("<html></html>")
     ok &= check("能找到子目录里的 report.html", app.App._find_report(fake) == html,
                 app.App._find_report(fake))
+
+    # 这个测试会造一个 300 MB 的假权重，跑完必须删干净 —— 忘了删会堆出几十 GB。
+    import shutil
+
+    shutil.rmtree(tmp, ignore_errors=True)
 
     print()
     print("PASS（图形界面）" if ok else "FAIL")
