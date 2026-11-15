@@ -15,6 +15,7 @@ Windows 上不带的话，子进程按 GBK 输出，中文会变成一串问号�
 
 from __future__ import annotations
 
+import json
 import os
 import queue
 import subprocess
@@ -29,19 +30,24 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "out"
 
 # 子进程环境：和 plugins.py 同一个教训，UTF-8 必须显式给
-def child_env() -> dict:
+def child_env(model: str = "") -> dict:
     env = dict(os.environ)
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONPATH"] = str(ROOT) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    if model:
+        env["FWMAP_LLM_MODEL"] = model
     return env
 
 
 def build_cmd(mode: str, target: str, outdir: str, *, binary: str = "",
-              port: int = 8080, llm: bool = False, limit: int | None = None) -> list[str]:
+              port: int = 8080, llm: bool = False, limit: int | None = None,
+              model: str = "") -> list[str]:
     """把界面上的几个选项翻译成一条命令。
 
     抽成纯函数是为了能测 —— GUI 里的东西没法断言，命令拼错了却一定会出事。
+    模型走环境变量 FWMAP_LLM_MODEL（triage 和 autopilot 都认），
+    autopilot 另外还有 --llm-model，两处都给上，省得某个模式漏掉。
     """
     py = sys.executable
     if mode == "doctor":
@@ -55,6 +61,8 @@ def build_cmd(mode: str, target: str, outdir: str, *, binary: str = "",
             cmd += ["--binary", binary]
         if llm:
             cmd.append("--llm")
+            if model:
+                cmd += ["--llm-model", model]
         if limit:
             cmd += ["--limit", str(limit)]
         cmd += ["-o", os.path.join(outdir, "survey.json")]
@@ -67,6 +75,49 @@ def build_cmd(mode: str, target: str, outdir: str, *, binary: str = "",
             cmd += ["--limit", str(limit)]
         return cmd
     raise ValueError(f"未知模式：{mode}")
+
+
+def looks_like_model(path: str) -> tuple[bool, str]:
+    """模型目录至少要有 config.json；顺便提醒一下它得是完整下载的。"""
+    p = Path(path)
+    if not p.exists():
+        return False, "这个目录不存在"
+    if p.is_file():
+        return False, "选的是文件，要选模型目录"
+    if not (p / "config.json").exists():
+        return False, "目录里没有 config.json —— 这不是 HuggingFace 格式的模型"
+    big = [f for f in p.glob("*.safetensors")] or [f for f in p.glob("*.bin")]
+    if not big:
+        return False, "目录里没有 *.safetensors / *.bin —— 权重没下载完？"
+    try:
+        size = sum(f.stat().st_size for f in big) / (1 << 30)
+    except OSError:
+        size = 0
+    if size < 0.2:
+        return False, f"权重只有 {size:.1f} GB —— 太小，八成没下完"
+    return True, f"{p.name}（{size:.1f} GB）"
+
+
+# 上次选的模型记在这儿，下次打开不用再选
+CFG_FILE = ROOT / "config.json"
+
+
+def load_config() -> dict:
+    try:
+        with open(CFG_FILE, encoding="utf-8-sig") as fh:
+            raw = fh.read()
+        return json.loads(raw) if raw.strip() else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_config(cfg: dict) -> None:
+    """记不住就算了 —— 存配置失败不能挡住主流程。"""
+    try:
+        with open(CFG_FILE, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
 
 
 def looks_like_rootfs(path: str) -> tuple[bool, str]:
@@ -100,6 +151,28 @@ class App(tk.Tk):
         self.last_outdir = ""
         self.last_mode = ""
         self._build()
+        self._prefill_model()
+
+    def _prefill_model(self) -> None:
+        """上次选的 → 环境变量 → 包内 tools/models → 常见缓存，尽量别让人重选。"""
+        m = (load_config().get("model") or os.environ.get("FWMAP_LLM_MODEL") or "").strip()
+        if not m or not Path(m).is_dir():
+            try:
+                from .agent.llm import find_model
+
+                cand = find_model()
+                m = cand if cand and Path(cand).is_dir() else ""
+                # 同一目录下如果还有 7B，优先 7B：1.5B 只够跑通，判断质量差一截。
+                # （config.json / 环境变量给的值在上一步就返回了，这里只管自动找。）
+                if m:
+                    with_7b = [p for p in Path(m).parent.glob("*7B*") if p.is_dir()]
+                    if with_7b and "7B" not in Path(m).name:
+                        m = str(sorted(with_7b)[0])
+            except Exception:                                   # noqa: BLE001
+                m = ""
+        if m:
+            self.model.set(m)
+        self._validate_model(quiet=True)
 
     # ---------------------------------------------------------------- 界面
     def _build(self) -> None:
@@ -137,6 +210,16 @@ class App(tk.Tk):
         self.binary = tk.StringVar()
         ttk.Entry(opts, textvariable=self.binary, width=16).pack(side="left")
         ttk.Label(opts, text="（留空=自动挑）", foreground="#667085").pack(side="left")
+
+        mrow = ttk.Frame(pad)
+        mrow.pack(fill="x", pady=(6, 0))
+        ttk.Label(mrow, text="模型目录（可选）").pack(side="left")
+        self.model = tk.StringVar()
+        ttk.Entry(mrow, textvariable=self.model, width=64).pack(side="left", padx=(6, 6))
+        ttk.Button(mrow, text="选择…", command=self._choose_model).pack(side="left")
+        self.model_hint = ttk.Label(mrow, text="", foreground="#667085", font=(ui, 9))
+        self.model_hint.pack(side="left", padx=(8, 0))
+        self.model.trace_add("write", lambda *_: self._validate_model(quiet=True))
 
         ttk.Separator(pad).pack(fill="x", pady=10)
 
@@ -192,6 +275,35 @@ class App(tk.Tk):
             self.target.set(p)
             self._validate()
 
+    def _choose_model(self) -> None:
+        p = filedialog.askdirectory(title="选模型目录（含 config.json 和 *.safetensors）")
+        if p:
+            self.model.set(p)
+            self._validate_model()
+            self._save_cfg()
+            if self.llm.get():
+                self.llm.set(True)           # 已经勾上了，保持勾上
+
+    def _validate_model(self, quiet: bool = False) -> bool:
+        path = self.model.get().strip()
+        if not path:
+            self.model_hint.configure(text="不填 = 只跑规则，结论一样", foreground="#667085")
+            return True
+        ok, msg = looks_like_model(path)
+        if ok:
+            self.model_hint.configure(
+                text=f"可以：{msg} · 要用就勾上「用本地模型复核」", foreground="#027a48")
+        else:
+            self.model_hint.configure(text=msg, foreground="#b42318")
+        if not ok and not quiet:
+            messagebox.showwarning("模型目录不对", msg)
+        return ok
+
+    def _save_cfg(self) -> None:
+        cfg = load_config()
+        cfg["model"] = self.model.get().strip()
+        save_config(cfg)
+
     def _validate(self) -> bool:
         ok, why = looks_like_rootfs(self.target.get().strip())
         self.hint.configure(text="" if ok else why)
@@ -209,6 +321,18 @@ class App(tk.Tk):
                 if not messagebox.askyesno("看起来不对", self.hint.cget("text") + "\n\n还是要试吗？"):
                     return
 
+        model = self.model.get().strip()
+        if self.llm.get():
+            if not model:
+                messagebox.showwarning(
+                    "没选模型", "勾了「用本地模型复核」，但上面没选模型目录。\n\n"
+                              "要么选一个（含 config.json 的目录），要么取消勾选 —— "
+                              "不勾也能跑，结论一样。")
+                return
+            if not self._validate_model():
+                return
+            self._save_cfg()
+
         stamp = time.strftime("%Y%m%d-%H%M%S")
         name = Path(target).name if target else "env"
         outdir = OUT_DIR / f"{name}-{mode}-{stamp}"
@@ -222,16 +346,19 @@ class App(tk.Tk):
         self.last_mode = mode
 
         cmd = build_cmd(mode, target, str(outdir), binary=self.binary.get().strip(),
-                        port=int(self.port.get() or 8080), llm=bool(self.llm.get()))
+                        port=int(self.port.get() or 8080), llm=bool(self.llm.get()),
+                        model=model)
         self._log_clear()
         self._log(f"$ {' '.join(cmd)}\n", "dim")
         self._log(f"输出目录：{outdir}\n\n", "dim")
+        if model:
+            self._log(f"模型：{model}\n\n", "dim")
         self.started_at = time.time()
         self._busy(True)
 
         def work() -> None:
             try:
-                p = subprocess.Popen(cmd, cwd=str(ROOT), env=child_env(),
+                p = subprocess.Popen(cmd, cwd=str(ROOT), env=child_env(model),
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                      text=True, encoding="utf-8", errors="replace",
                                      bufsize=1)
