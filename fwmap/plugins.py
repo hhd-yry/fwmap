@@ -35,6 +35,23 @@ from . import tools_api as T
 
 MANIFEST_KEYS = ("name", "cmd")
 
+# Windows 上 Python 子进程默认按 GBK 写 stdout，我们按 UTF-8 解 —— 中文全变 \ufffd。
+# 这个坑是真实对接时踩出来的：同学的 agent 回一句「无法连接接口：请检查…」，
+# 进了我们的日志变成一串问号。约定是「输出 UTF-8」，那就得给它设上。
+_UTF8_ENV = {"PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+
+
+def child_env(m: dict, argv: list[str]) -> dict:
+    """子进程环境：先继承，再叠 manifest 里的 env，最后给 Python 补 UTF-8。"""
+    env = dict(os.environ)
+    explicit = dict(m.get("env") or {})
+    env.update({str(k): str(v) for k, v in explicit.items()})
+    exe = os.path.basename(argv[0]).lower() if argv else ""
+    # manifest 里自己写了编码相关变量就听它的，别覆盖人家的选择
+    if exe.startswith("python") and not ({"PYTHONUTF8", "PYTHONIOENCODING"} & set(explicit)):
+        env.update(_UTF8_ENV)
+    return env
+
 
 def _summarize(output: str, mode: str, limit: int = 400) -> tuple[str, dict]:
     """把外部输出压成「一句话 + 小数据」。不猜语义，只报事实。"""
@@ -78,6 +95,7 @@ def load_manifest(path: str) -> dict:
         raise ValueError("cmd 必须是字符串数组（不要用 shell 字符串）")
     m.setdefault("desc", "外部工具")
     m.setdefault("args", {})
+    m.setdefault("env", {})
     m.setdefault("output", "json")
     m.setdefault("timeout", 600)
     m["_path"] = os.path.abspath(path)
@@ -88,6 +106,7 @@ def _normalize(m: dict) -> dict:
     """补默认值。不管是走 load_manifest 还是直接传 dict 注册，都要先过这一步。"""
     m.setdefault("desc", "外部工具")
     m.setdefault("args", {})
+    m.setdefault("env", {})
     m.setdefault("output", "json")
     m.setdefault("timeout", 600)
     m.setdefault("cmd", [])
@@ -111,6 +130,7 @@ def register_manifest(m: dict) -> str:
             # 外部工具一输出中文就 UnicodeDecodeError（还是发生在读取线程里，很难查）。
             p = subprocess.run(argv, capture_output=True, text=True,
                                encoding="utf-8", errors="replace",
+                               env=child_env(m, argv),
                                timeout=float(m["timeout"]),
                                cwd=m.get("cwd") or None)
         except subprocess.TimeoutExpired:

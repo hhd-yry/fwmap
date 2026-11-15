@@ -425,6 +425,7 @@ fwmap-tool/
 | `autopilot` | **智能体**：自己决定调哪个工具，一路跑到结论并输出调查日志 |
 | `tools` | 列出智能体能调用的工具（名字 / 用途 / 参数） |
 | `plugin` | 插件对接：`init` 生成模板、`test` 自测外部工具能不能接进来 |
+| `export` | 把链导出成别人的工具能直接吃的格式（目前是 Mango，对方不用改代码） |
 | `verify` | 新颖性核对：函数名 + 路由名双路检索（有网走 API，没网用离线库） |
 | `nvd` | 离线 NVD 索引：`fetch` / `build` / `update` / `check` / `status` / `search` |
 | `dyn` | 动态验证：把 PoC 打进模拟器里的二进制，看它崩不崩 |
@@ -468,6 +469,7 @@ fwmap-tool/
 - [docs/离线NVD.md](docs/离线NVD.md)：把 NIST 官方 42 万条 CVE 做成断网可用的本地库
 - [docs/智能体-autopilot.md](docs/智能体-autopilot.md)：让工具自己决定下一步（工具注册表 + 决策循环）
 - [docs/融合对接指南.md](docs/融合对接指南.md)：把别人的工具接进来（manifest + 自测，对方不用改代码）
+- [docs/评估-Mango-Agent.md](docs/评估-Mango-Agent.md)：同学那套 IDA 证据审查 Agent 的实测评估，以及我们和它怎么接
 - [docs/动态验证-固件起机.md](docs/动态验证-固件起机.md)：把固件在 qemu 里真正跑起来的六个坑，以及 NVRAM 怎么补
 - [docs/L2-返回地址可控.md](docs/L2-返回地址可控.md)：溢出阈值与「PC 可控」还差什么
 - [docs/A轮-筛查未报过的handler.md](docs/A轮-筛查未报过的handler.md)：7 个从未进过 CVE 的 handler 的筛查结论

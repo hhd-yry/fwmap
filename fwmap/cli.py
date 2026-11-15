@@ -341,6 +341,15 @@ def main(argv: list[str] | None = None) -> int:
     tl = sub.add_parser("tools", help="列出智能体能调用的工具（名字 / 用途 / 参数）")
     tl.set_defaults(func=cmd_tools)
 
+    ex = sub.add_parser("export", help="把链导出成别人的工具能直接吃的格式（目前是 Mango）")
+    ex.add_argument("--to", choices=["mango"], default="mango", help="目标格式（默认 mango）")
+    ex.add_argument("input", help="m3 --flow 的 flow.json")
+    ex.add_argument("-o", "--output", help="输出路径（默认 <输入>.mango.json）")
+    ex.add_argument("--binary", help="同一个 ELF：用来算 sha256，对方会拿它比对 IDA 里的库")
+    ex.add_argument("--top", type=int, default=0, help="只导出前 N 条（默认全部）")
+    ex.add_argument("--all", action="store_true", help="连被降级的链也导出（默认只要 keep）")
+    ex.set_defaults(func=lambda a: __import__("fwmap.export_mango", fromlist=["run"]).run(a))
+
     st = sub.add_parser("setup", help="下载安装 Ghidra / JDK（换机器后先跑这个）")
     st.add_argument("--ghidra", action="store_true", help="只装 Ghidra")
     st.add_argument("--jdk", action="store_true", help="只装 JDK")

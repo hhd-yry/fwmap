@@ -117,6 +117,42 @@ def main() -> int:
     rc = P.test_manifest(r["manifest"], tmp, log=lambda *_: None)
     ok &= check("plugin test 自测通过", rc == 0, rc)
 
+    # 9) 裸中文必须真的按 UTF-8 出来。
+    #    注意：json.dumps 默认 ensure_ascii=True，第 1 条测的中文其实是 \u4e2d 转义，
+    #    根本没走编码这条路 —— 这条才测得到。Windows 上 Python 子进程默认按 GBK 写管道，
+    #    不补 PYTHONUTF8 就会变成一串 \ufffd。
+    zh = write_tool(tmp, (
+        "import sys\n"
+        "sys.stdout.write('{\"msg\": \"无法连接接口\"}')\n"
+    ), "zh.py")
+    name5 = P.register_manifest({"name": "t_zh", "cmd": [sys.executable, q(zh)],
+                                 "output": "json", "_path": "x"})
+    r = T.call(name5)
+    blob = json.dumps(r, ensure_ascii=False)
+    ok &= check("裸中文不乱码（GBK 默认编码已兜住）", "无法连接接口" in blob, blob[:160])
+
+    # 10) manifest 能把环境变量传给外部工具（很多工具靠这个开关行为）
+    envtool = write_tool(tmp, (
+        "import os, json\n"
+        "print(json.dumps({'v': os.environ.get('FWMAP_TEST_MARK', '')}))\n"
+    ), "env.py")
+    name6 = P.register_manifest({"name": "t_env", "cmd": [sys.executable, q(envtool)],
+                                 "env": {"FWMAP_TEST_MARK": "hello-env"},
+                                 "output": "json", "_path": "x"})
+    r = T.call(name6)
+    ok &= check("manifest 的 env 传得到子进程", "hello-env" in json.dumps(r), r.get("summary"))
+
+    # 11) Python 外部工具默认拿到 UTF-8 的 stdout
+    enc = write_tool(tmp, (
+        "import sys, json\n"
+        "print(json.dumps({'enc': sys.stdout.encoding}))\n"
+    ), "enc.py")
+    name7 = P.register_manifest({"name": "t_enc", "cmd": [sys.executable, q(enc)],
+                                 "output": "json", "_path": "x"})
+    r = T.call(name7)
+    ok &= check("Python 子进程 stdout 是 utf-8", "utf-8" in json.dumps(r).lower(),
+                r.get("summary"))
+
     print()
     print("PASS（插件接口）" if ok else "FAIL")
     return 0 if ok else 1

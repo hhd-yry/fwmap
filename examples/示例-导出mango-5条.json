@@ -1,0 +1,113 @@
+{
+  "sha256": "e9d1b92527c57f24d141fa10a7377237de66a9c4f9c1b83223adfa8f1f1db11d",
+  "generator": {
+    "tool": "fwmap",
+    "source": "m3 --flow",
+    "binary": "p3/tenda19/bin/httpd（分析当时那台机器上的路径）",
+    "chains_total": 87,
+    "exported": 5,
+    "note": "rank 是 fwmap 这边的名次，不是漏洞概率"
+  },
+  "closures": [
+    {
+      "rank": 1,
+      "depth": 1,
+      "sink": {
+        "function": "doSystemCmd",
+        "ins_addr": "0x000a88a4"
+      },
+      "fwmap": {
+        "handler": "FUN_000a88a4",
+        "category": "ci",
+        "source_api": "FUN_0002ba8c",
+        "source_param": "data",
+        "sink_args": "iVar4 + DAT_000a9138,local_34",
+        "guard": "} else { iVar1 = strcmp(local_2c,(char *)(\"clean_onlineip\"))\u0000if (iVar1 == 0) { tpi_clear_statistic_info()\u0000FUN_0002c40c(param_1,iVar4 + DAT_000a911c)\u0000FUN_0002c40c(param_1,\"0\")\u0000FUN_0002c954(param_1,200)\u0000} else { iVar1 = strcmp(local_2c,(char *)(\"macfilter\"))",
+        "confidence": "low",
+        "weak": false,
+        "hops": 1,
+        "verdict": "keep"
+      }
+    },
+    {
+      "rank": 2,
+      "depth": 1,
+      "sink": {
+        "function": "doSystemCmd",
+        "ins_addr": "0x000a88a4"
+      },
+      "fwmap": {
+        "handler": "FUN_000a88a4",
+        "category": "ci",
+        "source_api": "FUN_0002ba8c",
+        "source_param": "modulename",
+        "sink_args": "\"behavior_manager %s --%s \",local_2c,local_30",
+        "guard": "FUN_0002c40c(param_1,\"0\")\u0000FUN_0002c954(param_1,200)\u0000} else { iVar1 = strcmp(local_2c,(char *)(\"macfilter\"))\u0000if (((((iVar1 == 0) || (iVar1 = strcmp(local_2c,(char *)(\"ipmacbind\")), iVar1 == 0)) || (iVar1 = strcmp(local_2c,(char *)(\"accountfilter\")), iVar1 == 0)) || (iVar1 = strcmp(local_2c,(char *)(\"…",
+        "confidence": "low",
+        "weak": false,
+        "hops": 1,
+        "verdict": "keep"
+      }
+    },
+    {
+      "rank": 3,
+      "depth": 1,
+      "sink": {
+        "function": "FUN_000b00fc",
+        "ins_addr": "0x000b04d4"
+      },
+      "fwmap": {
+        "handler": "formSetIptv",
+        "category": "ci",
+        "source_api": "FUN_0002ba8c",
+        "source_param": "list",
+        "sink_args": "local_24,local_28,local_2c",
+        "guard": "iVar1 = atoi(local_20)\u0000if (iVar1 == 1) { FUN_000b0084()\u0000sprintf(acStack_4ac,(char *)(\"op=%d\"),1)\u0000} else { FUN_000b00c0()\u0000sprintf(acStack_4ac,(char *)(\"op=%d\"),2)\u0000} iVar1 = atoi(local_1c)",
+        "confidence": "low",
+        "weak": false,
+        "hops": 1,
+        "verdict": "keep"
+      }
+    },
+    {
+      "rank": 4,
+      "depth": 1,
+      "sink": {
+        "function": "FUN_000b02e8",
+        "ins_addr": "0x000b04d4"
+      },
+      "fwmap": {
+        "handler": "formSetIptv",
+        "category": "ci",
+        "source_api": "FUN_0002ba8c",
+        "source_param": "list",
+        "sink_args": "local_24,local_28,local_2c",
+        "guard": "if (iVar1 == 1) { FUN_000b0084()\u0000sprintf(acStack_4ac,(char *)(\"op=%d\"),1)\u0000} else { FUN_000b00c0()\u0000sprintf(acStack_4ac,(char *)(\"op=%d\"),2)\u0000} iVar1 = atoi(local_1c)\u0000if (iVar1 == 1) { FUN_000b00fc(local_24,local_28,local_2c)",
+        "confidence": "low",
+        "weak": false,
+        "hops": 1,
+        "verdict": "keep"
+      }
+    },
+    {
+      "rank": 5,
+      "depth": 1,
+      "sink": {
+        "function": "doSystemCmd",
+        "ins_addr": "0x0007b8e4"
+      },
+      "fwmap": {
+        "handler": "FUN_0007b8e4",
+        "category": "ci",
+        "source_api": "FUN_0002ba8c",
+        "source_param": "cmdinput",
+        "sink_args": "\"%s > /tmp/cmdTmp.txt\",acStack_220",
+        "guard": "iVar1 = strcmp(acStack_320,(char *)(\"cd\"))\u0000if (iVar1 == 0) { sVar2 = strlen(*(char **)(iVar4 + DAT_0007bd68))\u0000FUN_0007b640(*(undefined4 *)(iVar4 + DAT_0007bd68),acStack_220,sVar2)\u0000doSystemCmd(\"echo %s > /tmp/cmdTmp.txt\",*(undefined4 *)(iVar4 + DAT_0007bd68))\u0000} else { iVar1 = strcmp(acStack_320,(char…",
+        "confidence": "low",
+        "weak": false,
+        "hops": 1,
+        "verdict": "keep"
+      }
+    }
+  ]
+}
