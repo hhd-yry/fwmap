@@ -152,6 +152,7 @@ class App(tk.Tk):
         self.last_mode = ""
         self._build()
         self._prefill_model()
+        self._tidy_out()
 
     def _prefill_model(self) -> None:
         """上次选的 → 环境变量 → 包内 tools/models → 常见缓存，尽量别让人重选。"""
@@ -348,24 +349,30 @@ class App(tk.Tk):
                 return
             self._save_cfg()
 
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        name = Path(target).name if target else "env"
-        outdir = OUT_DIR / f"{name}-{mode}-{stamp}"
-        try:
-            outdir.mkdir(parents=True, exist_ok=1)
-        except OSError:
-            # 装在 Program Files 之类不可写的位置时，退到用户目录，别直接崩
-            outdir = Path.home() / "fwmap-out" / f"{name}-{mode}-{stamp}"
-            outdir.mkdir(parents=True, exist_ok=1)
-        self.last_outdir = str(outdir)
-        self.last_mode = mode
+        # 检查环境不产出任何文件，别为它建空目录（以前每点一次就留一个空壳）
+        if mode == "doctor":
+            self.last_outdir = ""
+            self.last_mode = mode
+        else:
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            name = Path(target).name if target else "env"
+            outdir = OUT_DIR / f"{name}-{mode}-{stamp}"
+            try:
+                outdir.mkdir(parents=True, exist_ok=1)
+            except OSError:
+                # 装在 Program Files 之类不可写的位置时，退到用户目录，别直接崩
+                outdir = Path.home() / "fwmap-out" / f"{name}-{mode}-{stamp}"
+                outdir.mkdir(parents=True, exist_ok=1)
+            self.last_outdir = str(outdir)
+            self.last_mode = mode
 
-        cmd = build_cmd(mode, target, str(outdir), binary=self.binary.get().strip(),
+        cmd = build_cmd(mode, target, self.last_outdir or "", binary=self.binary.get().strip(),
                         port=int(self.port.get() or 8080), llm=bool(self.llm.get()),
                         model=model)
         self._log_clear()
         self._log(f"$ {' '.join(cmd)}\n", "dim")
-        self._log(f"输出目录：{outdir}\n\n", "dim")
+        if self.last_outdir:
+            self._log(f"输出目录：{self.last_outdir}\n\n", "dim")
         if model:
             self._log(f"模型：{model}\n\n", "dim")
         self.started_at = time.time()
@@ -436,7 +443,8 @@ class App(tk.Tk):
         missing = self.last_mode == "doctor" and code == 1
         if code == 0 or missing:
             tail = "（有缺项，看上面的 [MISS] 行）" if missing else ""
-            self.status.set(f"完成，用时 {secs:.0f} 秒{tail}。输出在 {self.last_outdir}")
+            where = f"。输出在 {self.last_outdir}" if self.last_outdir else ""
+            self.status.set(f"完成，用时 {secs:.0f} 秒{tail}{where}")
             self._log(f"\n[+] 完成，用时 {secs:.0f} 秒{tail}\n",
                       "err" if missing else "ok")
             if report:
@@ -460,6 +468,49 @@ class App(tk.Tk):
         # 跑完弹一个结论框，顺便把结论页（survey.html）亮出来。
         if code == 0 and self.last_mode == "auto":
             self._show_summary()
+        if code != 0:
+            self._cleanup_empty_run()
+
+    def _cleanup_empty_run(self) -> None:
+        """这次什么都没产出（崩了/秒退），别留一个空目录占着位置。"""
+        if not self.last_outdir:
+            return
+        try:
+            p = Path(self.last_outdir)
+            if p.is_dir() and not any(p.rglob("*")):
+                p.rmdir()
+                self._log(f"[i] 这次没有产出文件，空目录已删除：{p.name}\n", "dim")
+                self.last_outdir = ""
+        except OSError:
+            pass
+
+    def _tidy_out(self, hours: int = 1) -> None:
+        """清掉老的空目录（只删空的、且创建超过 N 小时的）。
+
+        为什么要按时间筛：正在跑的分析会先建目录、最后才写文件，
+        这时候它看起来就是空的 —— 不能顺手删掉。
+        """
+        removed = 0
+        try:
+            for p in OUT_DIR.iterdir() if OUT_DIR.is_dir() else []:
+                if not p.is_dir():
+                    continue
+                try:
+                    age_h = (time.time() - p.stat().st_mtime) / 3600
+                except OSError:
+                    continue
+                if age_h < hours:
+                    continue
+                try:
+                    if not any(p.rglob("*")):
+                        p.rmdir()
+                        removed += 1
+                except OSError:
+                    pass
+        except OSError:
+            return
+        if removed:
+            self._log(f"[i] 清掉了 {removed} 个历史空目录\n", "dim")
 
     def _summary_text(self) -> str:
         """从 survey.json 取结论，拼成能直接读的一段话。"""

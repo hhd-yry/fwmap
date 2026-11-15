@@ -159,7 +159,42 @@ def main() -> int:
     ok &= check("能找到子目录里的 report.html", app.App._find_report(fake) == html,
                 app.App._find_report(fake))
 
-    # 5) 一键分析跑完，要能从 survey.json 读出结论（界面上弹框用）
+    # 6) 空目录清理：失败/秒退的 run 不该在 out 下留空壳
+    import shutil
+    import time as _time
+
+    fake_log = types.SimpleNamespace(log=[], _log=lambda self, t, tag="": self.log.append(t))
+    run_dir = os.path.join(tmp, "out", "root-auto-20261115-173507")
+    os.makedirs(run_dir)
+    sh = types.SimpleNamespace(last_outdir=run_dir, _log=fake_log.__getattribute__("_log"))
+    sh._log = lambda text, tag="": None
+    app.App._cleanup_empty_run(sh)
+    ok &= check("空目录被删掉", not os.path.exists(run_dir), run_dir)
+
+    keep = os.path.join(tmp, "out", "root-report-1")
+    os.makedirs(keep)
+    open(os.path.join(keep, "report.html"), "w").write("x")
+    sh2 = types.SimpleNamespace(last_outdir=keep, _log=lambda *a, **k: None)
+    app.App._cleanup_empty_run(sh2)
+    ok &= check("有产出的目录不动", os.path.exists(keep))
+
+    # 只删「老的」空目录：正在跑的 run 目录看起来也是空的，不能碰
+    old = os.path.join(tmp, "out", "old-empty")
+    new = os.path.join(tmp, "out", "running-now")
+    os.makedirs(old)
+    os.makedirs(new)
+    past = _time.time() - 3 * 3600
+    os.utime(old, (past, past))
+    real_out = app.OUT_DIR
+    app.OUT_DIR = __import__("pathlib").Path(os.path.join(tmp, "out"))
+    try:
+        stub3 = types.SimpleNamespace(_log=lambda *a, **k: None)
+        app.App._tidy_out(stub3)
+        ok &= check("老的空目录被清掉", not os.path.exists(old))
+        ok &= check("正在跑的（新的空目录）不动", os.path.exists(new))
+        ok &= check("有文件的目录不动", os.path.exists(keep))
+    finally:
+        app.OUT_DIR = real_out
     auto_dir = os.path.join(tmp, "auto")
     os.makedirs(auto_dir)
     with open(os.path.join(auto_dir, "survey.json"), "w", encoding="utf-8") as fh:
