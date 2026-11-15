@@ -1,0 +1,114 @@
+<!doctype html><meta charset='utf-8'><title>fwmap triage</title>
+<style>
+body{font:14px/1.6 -apple-system,"Segoe UI",system-ui,sans-serif;margin:0;background:#f8f9fb;color:#101828}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 22px 80px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:34px 0 10px;padding-bottom:6px;border-bottom:1px solid #e4e7ec}
+.sub{color:#667085;font-size:13px}
+table{border-collapse:collapse;width:100%;background:#fff;border:1px solid #e4e7ec;border-radius:8px;overflow:hidden}
+th{background:#f9fafb;text-align:left;font-weight:600;font-size:12px;color:#475467;padding:8px 10px;border-bottom:1px solid #e4e7ec}
+td{padding:7px 10px;border-bottom:1px solid #f2f4f7;vertical-align:top}
+tr:last-child td{border-bottom:0}
+code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.note{background:#eff8ff;border-left:3px solid #2e90fa;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;color:#175cd3}
+.warn{background:#fffaeb;border-left:3px solid #f79009;padding:10px 14px;border-radius:0 6px 6px 0;font-size:13px;color:#b54708}
+.card{background:#fff;border:1px solid #e4e7ec;border-radius:8px;padding:14px 16px;margin:10px 0}
+.small{font-size:12.5px;color:#667085}
+</style>
+<div class='wrap'>
+<h1>fwmap triage · root2</h1>
+<div class='sub'>/home/ubuntu/lab/root2 · 生成于 2026-11-15 22:49 · LLM 复核已开</div>
+<div class='card'><b>一句话</b>：1 个二进制、28 条候选链、保留 4 条，其中 2 条对应的函数已出现在公开 CVE 里，LLM 复核 4 条里 0 条 CONFIRMED。CONFIRMED 仍需人工核对后才能叫漏洞。</div>
+<h2>先看这几条</h2>
+<div class='note'><b>如果只来得及看三条，看这三个。</b>排序依据：没被公开报过 &gt; 输入是 HTTP 参数 &gt; 直接进命令执行/拷贝 &gt; 跳数少 &gt; 端点没鉴权。这只是“优先顺序”，不是“这就是漏洞”。</div>
+<table><tr><th>#</th><th>函数 / 端点</th><th>源 → 汇</th><th>新颖性</th><th>凭什么排前面</th></tr>
+<tr><td>1</td><td><b class='mono'>getiNICIndex</b><br><span class='small'>端点未定位</span></td><td class='mono small'>apmib_get() → strcpy [bof]</td><td class='small'><span style='color:#64748b'>未命中</span></td><td class='small'>库里没有同函数/同路由的记录；往固定缓冲里拷贝</td></tr>
+<tr><td>2</td><td><b class='mono'>getiNICInfo</b><br><span class='small'>端点未定位</span></td><td class='mono small'>websWrite() → system [ci]</td><td class='small'><span style='color:#64748b'>未命中</span></td><td class='small'>库里没有同函数/同路由的记录；输入点是归纳出来的；直进命令执行</td></tr>
+<tr><td>3</td><td><b class='mono'>formStaDrvSetup</b><br><span class='small'>端点未定位</span></td><td class='mono small'>apmib_get() → system [ci]</td><td class='small'><b style='color:#b45309'>已公开 · 同厂商</b> <span class='small'>CVE-2025-22913、CVE-2025-15256</span></td><td class='small'>直进命令执行</td></tr>
+</table>
+<div class='warn small' style='margin-top:6px'>注意：M2 在这台固件上没把 URL 对上处理函数（策略 <code>strcmp-chain</code>），所以下面「端点」一栏基本是空的、鉴权那一层也等于没跑。这不代表这些函数不可达，只代表<b>这一轮没证出来</b>。</div>
+<div class='small' style='margin-top:6px'>剩下的 1 条：多数是「公共 CVE 里已有同函数」或「源是配置值（弱源）」或「跨多跳、中间过滤没核对」，摊在下面 ② 的表里，按需再翻。</div>
+<h2>动态验证做了吗</h2>
+<div class='note'>做了，见下面的 <b>④ 动态验证</b>。判定是「真发请求」得到的：先打一条无害的 <code>GET /</code> 做对照组，对照组就崩说明是环境问题，不算漏洞。</div>
+<h2>① 该先看哪些文件（M1）</h2>
+<table><tr><th>#</th><th>分数</th><th>角色</th><th>架构</th><th>大小</th><th>路径</th><th>端点</th><th>链</th></tr>
+<tr><td>1</td><td><b>87</b></td><td>http_server</td><td>MIPS</td><td>887K</td><td class='mono'>bin/webs</td><td>45</td><td>4</td></tr>
+</table>
+<div class='small' style='margin-top:6px'>分数只表示“攻击面有多大”，不是“有没有漏洞”。</div>
+<h2>② bin/webs</h2>
+<div class='small'>M2 策略 <code>strcmp-chain</code>，端点 45 个（前 8 个）</div>
+<div class='small'>M2.5 鉴权：protected 0 · unprotected 0 · unknown 45（unprotected 是候选，不代表可利用）</div>
+<table><tr><th>端点</th><th>handler</th><th>置信</th><th>鉴权</th></tr>
+<tr><td class='mono'>/aIndex.asp</td><td class='mono'>(未定位)</td><td>low</td><td title="handler 未定位或反编译失败"><span class="small">unknown</span></td></tr>
+<tr><td class='mono'>/advanced_management.asp</td><td class='mono'>(未定位)</td><td>low</td><td title="handler 未定位或反编译失败"><span class="small">unknown</span></td></tr>
+<tr><td class='mono'>/afail.asp</td><td class='mono'>(未定位)</td><td>low</td><td title="handler 未定位或反编译失败"><span class="small">unknown</span></td></tr>
+<tr><td class='mono'>/bandwidth_fail.asp</td><td class='mono'>(未定位)</td><td>low</td><td title="handler 未定位或反编译失败"><span class="small">unknown</span></td></tr>
+<tr><td class='mono'>/bandwidth_show.asp</td><td class='mono'>(未定位)</td><td>low</td><td title="handler 未定位或反编译失败"><span class="small">unknown</span></td></tr>
+<tr><td class='mono'>/conclusion.asp</td><td class='mono'>(未定位)</td><td>low</td><td title="handler 未定位或反编译失败"><span class="small">unknown</span></td></tr>
+<tr><td class='mono'>/detect.asp</td><td class='mono'>(未定位)</td><td>low</td><td title="handler 未定位或反编译失败"><span class="small">unknown</span></td></tr>
+<tr><td class='mono'>/goform/formAdvFirewall</td><td class='mono'>(未定位)</td><td>low</td><td title="handler 未定位或反编译失败"><span class="small">unknown</span></td></tr>
+</table>
+<div class='small' style='margin-top:10px'>M3：找到 28 条链，保留 <b>4</b> 条。</div>
+<table><tr><th>函数</th><th>源</th><th>汇</th><th>跳</th><th>新颖性</th><th>还缺什么</th><th>说明</th></tr>
+<tr><td class='mono'>formStaDrvSetup</td><td class='mono'>apmib_get()</td><td class='mono'>system<span class='small'> [ci]</span></td><td>1</td><td class='small'><b style='color:#b45309'>已公开 · 同厂商</b> <span class='small'>CVE-2025-22913、CVE-2025-15256</span></td><td class='small'>没做动态验证：还没真跑一发看命令到底执不执行</td><td class='small'>—</td></tr>
+<tr><td class='mono'>getiNICIndex</td><td class='mono'>apmib_get()</td><td class='mono'>strcpy<span class='small'> [bof]</span></td><td>1</td><td class='small'><span style='color:#64748b'>未命中</span></td><td class='small'>没做溢出验证：崩溃阈值和 PC 可控都没测</td><td class='small'>—</td></tr>
+<tr><td class='mono'>getInfo</td><td class='mono'>websWrite()</td><td class='mono'>system<span class='small'> [ci]</span></td><td>1</td><td class='small'><b style='color:#b45309'>已公开 · 他厂商</b> <span class='small'>CVE-2017-5372、CVE-2023-50330</span></td><td class='small'>输入点是按形状归纳的，没确认它真能拿到 HTTP 参数<span class='small' title='没做动态验证：还没真跑一发看命令到底执不执行'> +1</span></td><td class='small'>诱导源</td></tr>
+<tr><td class='mono'>getiNICInfo</td><td class='mono'>websWrite()</td><td class='mono'>system<span class='small'> [ci]</span></td><td>1</td><td class='small'><span style='color:#64748b'>未命中</span></td><td class='small'>输入点是按形状归纳的，没确认它真能拿到 HTTP 参数<span class='small' title='没做动态验证：还没真跑一发看命令到底执不执行'> +1</span></td><td class='small'>诱导源</td></tr>
+</table>
+<div class='small' style='margin-top:6px'><b>这批链共同的缺口：</b>没做动态验证：还没真跑一发看命令到底执不执行（3 条）；输入点是按形状归纳的，没确认它真能拿到 HTTP 参数（2 条）；没做溢出验证：崩溃阈值和 PC 可控都没测（1 条）。缺口不等于失败——它说明这条链证到了哪一步，以及下一刀该切哪儿。</div>
+<div class='small' style='margin-top:6px'>新颖性核对：已公开 <b>2</b> · 未命中 2。<b>未命中不等于新漏洞</b>，只说明按函数名/路由名在 NVD 里查不到。</div>
+<h2>③ LLM 复核</h2>
+<div class='note'>LLM 只回答“危险调用前有没有真正的保护”，并且必须引用语句编号（证据由我们取回，模型编不了）。裁决由规则给出。</div>
+<div class='card'>
+<div><span style="color:#475467;background:#f2f4f7;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600">REFUTED</span> <b class='mono'>formStaDrvSetup</b> <span class='mono'>apmib_get() → system</span></div>
+<div style='margin-top:6px'>`acStack_340` 在 sink 之前被重新赋值，污染已断：(GhidraScript) sprintf(acStack_340,&quot;echo &#x27;%d&#x27; &gt; /tmp/bindrootAPmac&quot;,local_38)</div>
+<div class='small mono' style='margin-top:6px;background:#f9fafb;padding:6px 8px;border-radius:4px'>(GhidraScript) sprintf(acStack_340,&quot;echo &#x27;%d&#x27; &gt; /tmp/bindrootAPmac&quot;,local_38)</div>
+<div class='small mono' style='margin-top:4px'>危险调用：acStack_340</div>
+</div>
+<div class='card'>
+<div><span style="color:#475467;background:#f2f4f7;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600">REFUTED</span> <b class='mono'>getiNICIndex</b> <span class='mono'>apmib_get() → strcpy</span></div>
+<div style='margin-top:6px'>`acStack_98` 在 sink 之前被重新赋值，污染已断：(GhidraScript) } (GhidraScript) sprintf(acStack_98,&quot;%d&quot;,local_50)</div>
+<div class='small mono' style='margin-top:6px;background:#f9fafb;padding:6px 8px;border-radius:4px'>(GhidraScript) if (iVar5 == 0) { (GhidraScript) return 0xffffffff</div>
+<div class='small mono' style='margin-top:4px'>危险调用：param_2,acStack_98</div>
+</div>
+<div class='card'>
+<div><span style="color:#475467;background:#f2f4f7;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600">REFUTED</span> <b class='mono'>getInfo</b> <span class='mono'>websWrite() → system</span></div>
+<div style='margin-top:6px'>`local_5ea8` 在 sink 之前被重新赋值，污染已断：(GhidraScript) if (bVar4) { (GhidraScript) sprintf (GhidraScript) ((char *)&amp;local_5ea8,s_al_8_00519c6c + -0x7e34, (GhidraScript) acStack_17c</div>
+<div class='small mono' style='margin-top:4px'>危险调用：&amp;local_5ea8</div>
+</div>
+<div class='card'>
+<div><span style="color:#475467;background:#f2f4f7;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600">REFUTED</span> <b class='mono'>getiNICInfo</b> <span class='mono'>websWrite() → system</span></div>
+<div style='margin-top:6px'>`local_5520` 在 sink 之前被重新赋值，污染已断：(GhidraScript) } (GhidraScript) fgets(&amp;local_5520,0x1e,iVar4)</div>
+<div class='small mono' style='margin-top:4px'>危险调用：&amp;local_5520</div>
+</div>
+<h2>④ 动态验证（真发请求）</h2>
+<div class='note'>这一步是<b>真的把请求发出去</b>：先打一条无害的 <code>GET /</code> 当对照组，对照组也崩就是环境问题、不算漏洞；命令注入类的判定看的是「命令的副作用真的出现了」（比如 <code>/tmp/pwned</code> 被写出来）。</div>
+<div class='small'>bin/webs · 运行时 <code>chroot+qemu-mipsel</code> · 对照组 <b>no-crash</b> · no-crash 12</div>
+<table><tr><th>函数</th><th>载荷</th><th>判定</th><th>说明</th></tr>
+<tr><td class='mono'>formStaDrvSetup</td><td class='mono small'>input=x&#x27;
+cp /etc/passwd /tmp/pwned
+&#x27;</td><td class='small'><b>没崩（不等于安全）</b></td><td class='small mono'></td></tr>
+<tr><td class='mono'>formStaDrvSetup</td><td class='mono small'>input=x&#x27;
+cp /etc/passwd /tmp/pwned
+</td><td class='small'><b>没崩（不等于安全）</b></td><td class='small mono'></td></tr>
+<tr><td class='mono'>formStaDrvSetup</td><td class='mono small'>input=cp /etc/passwd /tmp/pwned</td><td class='small'><b>没崩（不等于安全）</b></td><td class='small mono'></td></tr>
+<tr><td class='mono'>getInfo</td><td class='mono small'>input=x&#x27;
+cp /etc/passwd /tmp/pwned
+&#x27;</td><td class='small'><b>没崩（不等于安全）</b></td><td class='small mono'></td></tr>
+<tr><td class='mono'>getInfo</td><td class='mono small'>input=x&#x27;
+cp /etc/passwd /tmp/pwned
+</td><td class='small'><b>没崩（不等于安全）</b></td><td class='small mono'></td></tr>
+<tr><td class='mono'>getInfo</td><td class='mono small'>input=cp /etc/passwd /tmp/pwned</td><td class='small'><b>没崩（不等于安全）</b></td><td class='small mono'></td></tr>
+<tr><td class='mono'>getiNICInfo</td><td class='mono small'>input=x&#x27;
+cp /etc/passwd /tmp/pwned
+&#x27;</td><td class='small'><b>没崩（不等于安全）</b></td><td class='small mono'></td></tr>
+<tr><td class='mono'>getiNICInfo</td><td class='mono small'>input=x&#x27;
+cp /etc/passwd /tmp/pwned
+</td><td class='small'><b>没崩（不等于安全）</b></td><td class='small mono'></td></tr>
+<tr><td class='mono'>getiNICInfo</td><td class='mono small'>input=cp /etc/passwd /tmp/pwned</td><td class='small'><b>没崩（不等于安全）</b></td><td class='small mono'></td></tr>
+<tr><td class='mono'>getiNICIndex</td><td class='mono small'>input=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</td><td class='small'><b>没崩（不等于安全）</b></td><td class='small mono'></td></tr>
+<tr><td class='mono'>getiNICIndex</td><td class='mono small'>input=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</td><td class='small'><b>没崩（不等于安全）</b></td><td class='small mono'></td></tr>
+<tr><td class='mono'>getiNICIndex</td><td class='mono small'>input=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</td><td class='small'><b>没崩（不等于安全）</b></td><td class='small mono'></td></tr>
+</table>
+<h2>边界</h2><div class='warn'>① 分数只表示攻击面大小；② 链是“可疑”，不是“漏洞”；③ 引擎分不清“有界/无界”的所有写法，假阳性仍需人工核对；④ 只处理 ELF，PHP/lua 驱动的固件直接失明；⑤ “有鉴权”只说明存在鉴权动作，不证明实现正确；“未见鉴权”是候选，父级函数或前置代理鉴权无法完全排除；⑥ 动态验证的 <code>no-crash</code> 只说明“这一发没打动”，不是“安全”。</div>
+</div>
