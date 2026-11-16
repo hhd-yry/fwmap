@@ -165,3 +165,49 @@ webs/www/index.cgi  + 9 个 .htm   ← 和 DIR-320 NRU 一样是 CGI 单入口
 | DIR-816L A1A 2.5.3 | 2015 | 1384 | busybox httpd + index.cgi |
 
 两台都是 **CGI 单入口**（不是 Boa /goform）—— 缺的正是 `cgi_dispatch` 这个机制。
+---
+
+## 八、DIR-816L 挖到哪儿了（2026-11-16 晚）
+
+### 8.1 三个必须先解决的问题，已解决两个半
+
+| 问题 | 现象 | 解法 | 状态 |
+|---|---|---|---|
+| 符号链接被 7z 写成文本 | `/lib/ld-uClibc.so.0` 是 21 字节的文本，动态程序全部起不来 | `repair_symlinks()` 还原 148 个 | ✅ 进代码了 |
+| 执行位丢失 | chroot 报 Permission denied | `fix_exec_bits()` 补 422 个 | ✅ 进代码了 |
+| **CGI 找不到模板** | 只回 20 字节；stderr 说 `Can not read templates file!` | **必须 `cd /webs/www` 再执行** `./index.cgi` | ✅ 已定位 |
+| 鉴权 | 未登录只给登录页 | 会话存在 `/tmp/check_session.json`（明文 JSON），伪造 privilege 不够 | ⚠️ 未绕过 |
+
+第 3 条是通用经验：**CGI 一定用相对路径找模板/配置**，所以运行时必须
+`chdir` 到脚本所在目录，否则它永远只回几十字节 —— 看起来像"没这个 action"，
+其实是"根本没跑起来"。
+
+```bash
+env -i ... REQUEST_METHOD=GET SCRIPT_NAME=/index.cgi \
+  chroot $ROOT /bin/sh -c 'cd /webs/www && exec ./index.cgi'
+# → 5420 字节的登录页（之前只有 20 字节）
+```
+
+### 8.2 这个 Web 后台的结构（从 JS 和二进制里读出来的）
+
+```
+分发：POST 的 action 字段（JS 框架 data:{action:…}）；v2_action 只用于 exportlog/givemessage
+响应：res_config_action0/1/…（是响应字段，不是请求参数）
+模板：webs/www/templates；前端 jquery.json.js（JSON RPC）
+会话：/tmp/check_session.json，字段 privilege(0=未登录)/ip_address/session_is_update
+鉴权：client_login / create_auth_session / check_auth / check_ban / check_from_lan
+```
+
+伪造 `privilege=1/2/3` 的会话，页面仍是登录模板（5348 字节）—— 说明
+`check_auth` 不只看这个文件，或者登录时还要置别的状态。
+
+### 8.3 M3 给的 4 条强源链（还没验证）
+
+```
+FUN_004027a4                 json_string_value()  → sprintf[bof]
+__read_multipart_form_data   getenv(CONTENT_TYPE) → strcpy[bof]
+get_cookies                  getenv(HTTP_COOKIE)  → strcpy[bof]  ×2跳
+FUN_004022bc                 json_string_value()  → strcpy[bof]  ×2跳
+```
+
+**JSON 解析 → sprintf/strcpy**，2015 年的代码。现在只差过鉴权这一步。
