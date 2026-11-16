@@ -394,3 +394,80 @@ signum: "SIGSEGV"
 
 1. 让 `somovd` 跑起来（`qemu-system` 全系统模拟，半天起）
 2. 找到 `somovd` 的 RPC 协议，在 chroot 里用一个假服务顶替它（更精细，但要知道协议）
+---
+
+## 九、换目标：DIR-615 C2（2010）—— 结构最对口的一台
+
+### 9.1 为什么选它
+
+之前的 D-Link（DIR-320 NRU / DIR-816L）都是 **CGI + somovd 守护进程**，
+user-mode 起不来。DIR-615 C2（2010-10）不一样：
+
+```
+sbin/httpd   473 KB 独立进程，chroot 里直接起来
+             GET /index.asp → HTTP/1.0 200 Ok（4125 字节）
+www/*.asp    108 个页面
+CGI          固件里没有 .cgi 文件：apply.cgi / login.cgi 都是 httpd 内部虚拟处理的
+```
+
+**没有 somovd、没有 transmission、没有要网络栈的守护进程。**
+
+### 9.2 解包与修复（我们的工具直接用上）
+
+```
+uImage(0x27051956) + LZMA 内核 + squashfs 3.0 大端（偏移 0x100000）
+7z 解出 539 个文件
+repair_symlinks()  还原 69 个符号链接
+fix_exec_bits()    补 191 个执行位
+```
+
+### 9.3 M2/M3 结果
+
+M2 抽出一批**虚拟端点**（都由 httpd 内部处理）：
+
+```
+upload_configuration.cgi   usb_test.cgi   virtual_push_button.cgi
+wireless_driver_update.cgi  user_page.asp  ...
+```
+
+M3 的 3 条强源链，形状完全一致：
+
+```
+do_customer_00_cgi   get_cgi(html_response_page) → sprintf[bof] ×2跳
+FUN_00410bb0         get_cgi(html_response_page) → sprintf[bof] ×2跳
+FUN_00410ce4         get_cgi(html_response_page) → sprintf[bof] ×2跳
+```
+
+`html_response_page` 就是 .asp 表单里的隐藏字段（`<input name="html_response_page">`），
+**用户可控**。另有 18 条弱源链 `nvram_safe_get(...) → _system[ci]`。
+
+### 9.4 打的结果
+
+| 请求 | 结果 |
+|---|---|
+| `GET /index.asp` | 200，4125 字节（正常页面） |
+| `GET /apply.cgi`（未登录） | 200，返回登录页（auth 门） |
+| `GET /apply.cgi?html_response_page=<64~512B>` | 200，恒定 2842 字节 —— 参数被忽略（因为未登录） |
+| `POST /apply.cgi`（任意 body） | 空响应（未登录一律拒） |
+| `POST body > 4096 字节` | 连接被重置（httpd 有请求大小上限） |
+| **`GET/POST /login.cgi`（任何方法、任何 body）** | **SIGSEGV，httpd 直接死** |
+
+### 9.5 login.cgi 的无条件崩溃 —— 又是环境假象
+
+四种输入全部崩（GET / 正确字段名 / 瞎填 / 空 body），
+而且补了 `/dev/urandom`、`/dev/random` 之后仍然崩。
+
+这和 DIR-816L 的 `fwupdate.cgi` 是同一种特征：**和输入无关 ⇒ 大概率是环境缺东西**。
+所以**不作为漏洞上报**。
+
+### 9.6 现在的卡点
+
+要打那 3 条 `html_response_page → sprintf` 链，必须先登录；
+而 `login.cgi` 在我们的 chroot 里跑不起来。缺的可能是：
+
+- 真实的 `/dev/mtd*` / NVRAM 设备（密码存在那）
+- CAPTCHA 生成依赖的东西（页面里有 `graph_id` / `graph_code`）
+- 或者 httpd 期望的配置文件路径
+
+**下一步**：`strings sbin/httpd` 找 `login.cgi` 处理函数引用哪些文件/设备，
+把缺失的补出来；补不出来就换 pre-auth 就可达的端点（`usb_test.cgi` 之类）。
