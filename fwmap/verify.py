@@ -298,13 +298,22 @@ def judge_function(fn: str, routes: list[str], cache: dict,
 
     confidence = ""
     if uniq:
-        verdict = "known"
-        if ctx:
-            on = sum(1 for m in uniq if m.get("on_context"))
-            confidence = "high" if on else "medium"
-            note = f"命中 {len(uniq)} 条已公开 CVE（{on} 条提到目标厂商/型号）"
+        on = sum(1 for m in uniq if m.get("on_context")) if ctx else 0
+        # 短函数名（mp / up / ap / do）在 CVE 描述里到处都是，
+        # 命中一堆却一条没提厂商 —— 这种"known"是噪音，会让我们把真候选划掉。
+        # 实测：Edimax 的 `mp` 命中 21 条 CVE、0 条提到 Edimax。
+        if len(fn) <= 4 and ctx and not on:
+            verdict = "manual"
+            confidence = ""
+            note = (f"函数名 {fn!r} 太短，命中 {len(uniq)} 条 CVE 但一条没提目标厂商/型号 ——"
+                    f"这个匹配不可信，需人工核对")
         else:
-            note = f"命中 {len(uniq)} 条已公开 CVE"
+            verdict = "known"
+            if ctx:
+                confidence = "high" if on else "medium"
+                note = f"命中 {len(uniq)} 条已公开 CVE（{on} 条提到目标厂商/型号）"
+            else:
+                note = f"命中 {len(uniq)} 条已公开 CVE"
     elif weaks:
         verdict = "unknown"
         note = (f"{len(weaks)} 条只是大小写不同的同名写法"
