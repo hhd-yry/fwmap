@@ -319,3 +319,49 @@ uVar5 = json_integer_value(uVar5);
 
 **下一步（明确到函数）**：反编译渲染入口（`main` / `index_page` / `get_auth_state`），
 看它到底按哪个条件选模板。这是纯静态活，不需要再折腾环境。
+### 8.8 C 路线收尾：鉴权能"伪造"，但页面选择依赖一个跑不起来的守护进程
+
+从 `main` 的反编译里读到了完整的登录流程：
+
+```c
+iVar4 = is_auth_session();                 // 没登录 → 0
+if (iVar4 == 0) {
+    sid = get_param("session_num") ?: rand_string(15);
+    create_auth_session(sid);
+    ...
+    update_auth_session(sid, host,
+                        get_param("update_login"),      // ★ 真正的登录参数名
+                        get_param("update_password"));
+    default_conf = CallRPC(0x29, 0, 0, 0);      // ← 向 somovd 守护进程问状态
+    if (default_conf == 0x14) { ... client_login / client_password ... }
+    else { set_auth_data("anonymous", "anonymous", ...); }
+}
+```
+
+**关键发现：登录参数不是 `user/pass`，是 `update_login / update_password`。**
+
+按这个打，会话文件立刻变成：
+
+```json
+"LOGINTEST123456": {
+  "ip_address": "127.0.0.1",
+  "login": "admin",
+  "password": "1234",
+  "session_is_update": 1,
+  "privilege": 255
+}
+```
+
+响应头也带上了 `Set-Cookie: current_login=admin`。
+
+**但页面还是登录模板。** 原因在 `main` 里那句 `CallRPC(0x29,...)`：
+鉴权状态要向 **somovd 守护进程**问，而我们 chroot 里没跑它（它也起不来，和
+transmission 一样是 user-mode 的限制）。RPC 失败 → 走 `set_auth_data("anonymous")` 分支
+→ 渲染登录页。
+
+**结论：这台固件的 Web 后台不是"一个 CGI 说了算"，是 CGI + 守护进程。**
+user-mode 模拟能跑 CGI，但跑不了它依赖的守护进程。
+
+**下一步（离线研究的常规做法）**：把 `is_auth_session` 的返回值在**副本**上改掉，
+让 CGI 直接认为已登录，从而进到那 4 条链的处理函数里。
+报告里必须写明"用了打过补丁的副本"，因为真实远程利用还需要一个鉴权绕过。
