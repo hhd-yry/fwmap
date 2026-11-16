@@ -188,6 +188,7 @@ def _attempt(req: dict, runtime: dict, timeout: float, ready_timeout: float) -> 
         # 守护进程型的（父进程 fork 完就退）同样走这里：父进程 0 退出 = 没崩。
         crashed, code, out, err = _proc_state(proc, timeout)
         return {"status": "crash" if crashed else "no-crash", "exit": code,
+                "signal": _signal_of(out + err, code) if crashed else "",
                 "elapsed": round(time.time() - t0, 1),
                 "resp": resp[:300].decode("latin-1", "replace"),
                 "stdout": out[:600], "stderr": err[:600], "runtime": label}
@@ -215,6 +216,27 @@ def _is_crash_code(code) -> bool:
     if code is None:
         return False
     return code < 0 or code >= 0x80000000
+
+
+def _signal_of(text: str, code) -> str:
+    """从退出码/日志里认一下「被什么打死的」。
+
+    这件事看起来只是措辞，实际上决定报告能不能被复核：
+    `SIGSEGV` 是访问越界，`SIGABRT` 多半是程序自己 abort（比如 boa 捕获段错误后自杀），
+    两者含义完全不同 —— 不能都写成「崩了」。
+    """
+    if not text:
+        text = ""
+    low = text.lower()
+    if "caught sigsegv" in low or "segmentation fault" in low:
+        return "SIGSEGV"
+    if "sigabrt" in low or "aborted" in low:
+        return "SIGABRT"
+    if "sigbus" in low:
+        return "SIGBUS"
+    if isinstance(code, int) and code < 0:
+        return {11: "SIGSEGV", 6: "SIGABRT", 7: "SIGBUS"}.get(-code, f"signal {-code}")
+    return ""
 
 
 def _proc_state(proc, timeout: float):
@@ -381,10 +403,19 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
             if can_exec and effect_path and os.path.exists(effect_path):
                 res["status"] = "exec-confirmed"
                 res["effect"] = _read_effect(effect_path)
-            log(f"      {res['status']}")
+            log(f"      {res['status']}" + (f" ({res.get('signal')})" if res.get("signal") else ""))
             rows.append({"req": r, "result": res})
             if res["status"] in ("crash", "exec-confirmed"):
                 break                     # 有结论了，不用再加码
+
+        # 一条都没崩、而且固件回的是 ERR_MSG 之类的错误页 —— 大概率参数名/路径不对。
+        # 这时候「没崩」什么都不说明，必须写清楚，别让人当成「这条链安全」。
+        if rows and all(x["result"].get("status") == "no-crash" for x in rows):
+            resp = " ".join((x["result"].get("resp") or "") for x in rows).lower()
+            if any(k in resp for k in ("err_msg", "invalid", "no such", "not found")):
+                for x in rows:
+                    x["result"]["note"] = ("固件回的是错误页（ERR_MSG）—— 很可能参数名不对，"
+                                           "这一发没打到处理函数，不能当成「没漏洞」")
         results.append({"chain": c, "rows": rows})
 
     counts: dict[str, int] = {}

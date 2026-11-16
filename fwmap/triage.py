@@ -557,11 +557,18 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
                     req = row.get("req") or {}
                     detail = (row.get("result") or {}).get("detail") or ""
                     eff = (row.get("result") or {}).get("effect") or ""
+                    sig = (row.get("result") or {}).get("signal") or ""
+                    note = (row.get("result") or {}).get("note") or ""
+                    # 崩了要写清是 SIGSEGV 还是 SIGABRT —— 前者是访问越界，
+                    # 后者多半是程序自己 abort，含义完全不同。
+                    tail = eff or detail or note
+                    if sig:
+                        tail = f"[{sig}] " + tail
                     L.append(f"<tr><td class='mono'>{e(fn)}</td>"
                              f"<td class='mono small'>{e(str(req.get('param', '')))}="
                              f"{e(str(req.get('value', ''))[:40])}</td>"
                              f"<td class='small'><b>{e(_DYN_LABEL.get(st, st))}</b></td>"
-                             f"<td class='small mono'>{e((eff or detail)[:160])}</td></tr>")
+                             f"<td class='small mono'>{e(tail[:160])}</td></tr>")
             L.append("</table>")
             if cts.get("exec-confirmed"):
                 L.append("<div class='warn'><b>命令执行已确认：</b>注入的命令真的在这个固件上跑了，"
