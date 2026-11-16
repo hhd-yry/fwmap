@@ -211,3 +211,30 @@ FUN_004022bc                 json_string_value()  → strcpy[bof]  ×2跳
 ```
 
 **JSON 解析 → sprintf/strcpy**，2015 年的代码。现在只差过鉴权这一步。
+### 8.4 B 路线：打登录前入口 —— 找到一个崩溃，但判定为环境问题
+
+`fwupdate.cgi` 在 httpd 下**任何请求都崩**：
+
+```
+GET  /index.html    → 200 OK        （对照组正常）
+GET  /fwupdate.cgi  → 空响应，httpd 日志: qemu: uncaught target signal 11
+POST /fwupdate.cgi  → 同样崩
+```
+
+一开始以为中了，做了三组排除：
+
+| 变量 | 结果 |
+|---|---|
+| 完整 multipart（boundary + 假固件文件） | 崩 |
+| 空 body / 无 Content-Type | 崩 |
+| boundary 放大 512 / 2048 / 8192 | 崩（和基线一样）|
+| filename 放大 512 / 2048 | 崩（一样）|
+| 会话文件：伪造的 / 删除 / 让 index.cgi 正常建 | **三种都崩** |
+
+**结论：和输入无关，是无条件崩溃。** 一条"无论发什么都崩"的路径，
+在真机上不可能存在（否则固件升级页永远用不了）——
+所以这是我们的环境缺东西（`strings` 显示它依赖 `start_session_file_use`、
+`set_lock_file`、`json_loadf`，很可能在等某个 `/tmp` 锁文件或 `/dev/mtd*`）。
+
+**不作为漏洞上报。** 这条正好印证了对照组纪律：
+先证明"和输入有关"，再谈漏洞。
