@@ -279,3 +279,43 @@ strace 看它卡在 `nanosleep(100ms)` 的循环里，另有一个线程挂在 f
 
 **下一步的岔路口**：要么上 qemu-system（半天到一天，之后所有守护进程都能跑），
 要么换一台"没有守护进程、纯 CGI"的目标（现有工具直接可用）。
+### 8.7 C 路线：逆鉴权 —— 已经看到模型，但还差最后一环
+
+反编译 `index.cgi` 的鉴权函数（Ghidra，函数名来自字符串表）：
+
+```c
+// is_auth_session()：只要 auth_session[session_num] 这个键存在，就返回 1
+iVar1 = get_param(params, "session_num");        // ← 从**请求参数**取，不只是 Cookie
+...
+auth = json_object_get(root, "auth_session");
+entry = json_object_get(auth, iVar1);
+if (entry != 0) return 1;                        // ★ 有键就算登录
+
+// get_privilege_session()：权限等级也是从同一个文件读
+uVar5 = json_object_get(entry, "privilege");
+uVar5 = json_integer_value(uVar5);
+
+// check_ban()：封禁状态存在 ip_session[ip] 里（is_ban / ban_time / fails）
+```
+
+**模型非常明确**：鉴权全在 `/tmp/check_session.json` 这个明文文件里，
+
+- 有一个 `auth_session[<session_num>]` 条目 → 认为已登录
+- 该条目的 `privilege` 字段就是权限等级
+- `session_num` 是**请求参数**（`get_param`），Cookie 只是其中一种传法
+
+按这个模型，我们把 `session_num` 塞进 query，配合伪造的会话文件，应该就够了。
+**但实测仍然返回登录模板**（5348 / 5379 字节，都带 `login.css`）：
+
+```
+?session_num=SID              5379 字节（登录模板）
+?session_num=SID + Cookie     5348 字节（登录模板）
+只 Cookie                     5348 字节（登录模板）
+什么都没有                    5420 字节（登录模板）
+```
+
+说明页面选择还看别的条件 —— 最可能是 `get_auth_state()` 或者模板选择处，
+它可能还要求 `privilege` 达到某值、或 `session_is_update` 的标志。
+
+**下一步（明确到函数）**：反编译渲染入口（`main` / `index_page` / `get_auth_state`），
+看它到底按哪个条件选模板。这是纯静态活，不需要再折腾环境。
