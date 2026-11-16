@@ -127,3 +127,41 @@ env -i PATH=/bin:/sbin REQUEST_METHOD=GET QUERY_STRING="v2_action=xxx" \
 
 `cgi_direct` 这个跑法本身很有用（不用起 httpd、不用管 fork，退出码就是崩溃信号）。
 如果以后要专门打 CGI 型固件，把它做成 dyn 的一种运行时即可，约 60 行。
+---
+
+## 七、重要更正（2026-11-16 晚）：cr6b **不是**解不开
+
+前面第 2 节我写过「cr6b 是加密，没密钥解不开」——**这个结论是错的**，当天就被自己的工具推翻了。
+
+新写的 `fwmap unpack` 在同一个 DIR-816L 镜像上：
+
+```
+[unpack] d816.bin 7435 KB · 头 'cr6b...' · 熵 7.99 · 头是 cr6b（D-Link 私有加密容器）
+[unpack] 试 binwalk —— 没成（link points outside of the extraction directory）
+[unpack] 试 7z —— 成功 → 1384 个文件 / 26 MB / 71 个真 ELF
+[+] rootfs: /tmp/unp-enc/7z
+```
+
+解出来的东西是真的：
+
+```
+顶层: bin dev etc home lib lib32 lib64 mnt opt proc root sbin share sys tmp usr var VERSION webs
+VERSION: NAME: DIR_816LA1A   VERSION: 2.5.3   BUILDTIME: 2015-07-22
+webs/www/index.cgi  + 9 个 .htm   ← 和 DIR-320 NRU 一样是 CGI 单入口
+```
+
+**教训**：`unsquashfs` 报 "version 17962.6141" 只能证明**这个偏移上不是标准 squashfs**，
+不能证明整个镜像加密。我当时从「熵 7.99 + 私有头 + unsquashfs 失败」直接跳到「加密」，
+少试了一步 `7z` —— 而 `7z` 恰恰认识 v3 超级块。
+
+这条经验已经变成代码：`fwmap unpack` 会**依次试**，失败不跳结论；
+而且验收看的是「像不像 rootfs」（bin/etc/lib + 真 ELF 计数），不是看工具的退出码。
+
+### 两个可用的国外目标（都解开了）
+
+| 型号 | 年份 | 文件数 | Web 架构 |
+|---|---|---|---|
+| DIR-320 NRU 1.4.3 | 2013 | 927 | busybox httpd + index.cgi |
+| DIR-816L A1A 2.5.3 | 2015 | 1384 | busybox httpd + index.cgi |
+
+两台都是 **CGI 单入口**（不是 Boa /goform）—— 缺的正是 `cgi_dispatch` 这个机制。

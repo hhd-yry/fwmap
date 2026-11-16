@@ -367,6 +367,15 @@ def main(argv: list[str] | None = None) -> int:
     rt.add_argument("--json", help="把结果写到这个文件")
     rt.set_defaults(func=cmd_routes)
 
+    up = sub.add_parser("unpack", help="解包/拆壳：模型挑工具，解完用「像不像 rootfs」验收")
+    up.add_argument("image", help="固件镜像（.bin/.img/.trx）")
+    up.add_argument("-o", "--out", required=True, help="解到哪个目录")
+    up.add_argument("--no-llm", action="store_true",
+                    help="不问模型，按 binwalk→7z→unsquashfs 兜底")
+    up.add_argument("--json", help="结果写到这个文件")
+    up.set_defaults(func=lambda a: __import__(
+        "fwmap.cli_unpack", fromlist=["cmd_unpack"]).cmd_unpack(a))
+
     sv = sub.add_parser("serve", help="把本机模型变成 HTTP 服务，给别的机器用（如虚拟机）")
     sv.add_argument("--host", default="127.0.0.1",
                     help="监听地址（默认只本机；给虚拟机用得用 0.0.0.0）")
