@@ -210,6 +210,68 @@ def looks_like_rootfs(path: str) -> dict:
             "reason": "" if ok else f"只看到 {len(hit)} 个标准目录、{elf} 个疑似可执行"}
 
 
+def repair_symlinks(root: str, max_size: int = 64) -> dict:
+    """把 7z 写坏的符号链接还原。
+
+    7z 解 squashfs/cramfs 时**不还原符号链接**，而是写成一个只有几十字节的小文件，
+    内容是链接目标的名字（比如 `/bin/date` 里存着 `busybox`，
+    `/lib/ld-uClibc.so.0` 里存着 `ld-uClibc-0.9.30.3.so`）。
+    后果很致命：动态链接的程序全都起不来，报
+    `mips-binfmt-P: /lib/ld-uClibc.so.0: Invalid ELF image for this architecture`
+    —— 看起来像架构不对，其实是那个"文件"根本不是 ELF。
+
+    判据要严：内容必须是纯路径/名字，而且**目标真的存在**，才敢替换。
+    """
+    fixed = skipped = 0
+    for base, _dirs, files in os.walk(root):
+        for name in files:
+            path = os.path.join(base, name)
+            try:
+                st = os.lstat(path)
+                if st.st_size == 0 or st.st_size > max_size:
+                    continue
+                with open(path, "rb") as fh:
+                    raw = fh.read()
+                if b"\x00" in raw:
+                    continue
+                text = raw.decode("ascii").strip()
+            except (OSError, UnicodeDecodeError):
+                continue
+            if not re.fullmatch(r"[A-Za-z0-9_./+-]{1,60}", text or ""):
+                continue
+            if not (os.path.exists(os.path.join(base, text))
+                    or os.path.exists(os.path.join(root, text.lstrip("/")))):
+                skipped += 1
+                continue
+            try:
+                os.remove(path)
+                os.symlink(text, path)
+                fixed += 1
+            except OSError:
+                pass
+    return {"fixed": fixed, "skipped": skipped}
+
+
+def fix_exec_bits(root: str) -> int:
+    """7z 也不保留执行位：所有 ELF 补 +x（否则 chroot/qemu 直接 Permission denied）。"""
+    n = 0
+    for base, _dirs, files in os.walk(root):
+        for name in files:
+            path = os.path.join(base, name)
+            try:
+                if os.path.getsize(path) < 1024:
+                    continue
+                with open(path, "rb") as fh:
+                    if fh.read(4) != b"\x7fELF":
+                        continue
+                if not os.access(path, os.X_OK):
+                    os.chmod(path, os.stat(path).st_mode | 0o755)
+                n += 1
+            except OSError:
+                pass
+    return n
+
+
 def _run_tool(tool: str, image: str, outdir: str, timeout: int = 300) -> dict:
     spec = TOOLS.get(tool)
     if not spec:
@@ -265,9 +327,14 @@ def unpack(image: str, outdir: str, *, chat=None, log=print, tools=None) -> dict
         tried.append({"tool": tool, **{k: res.get(k) for k in ("ok", "dir", "error")}})
         if res["ok"]:
             log(f"[unpack] {tool} 成功 → {res['dir']}（{res['verdict']['dirs']}）")
-            if tool == "7z":
-                log("[unpack] 提醒：7z 会丢执行位，分析前要补 +x")
+            # 7z 的两个老毛病：符号链接变成小文本文件、执行位丢失。
+            # 不补的话解出来的固件"能看不能跑"—— 动态链接的程序全都起不来。
+            sym = repair_symlinks(res["dir"])
+            ex = fix_exec_bits(res["dir"])
+            if sym["fixed"] or ex:
+                log(f"[unpack] 自动修复：还原符号链接 {sym['fixed']} 个、补执行位 {ex} 个")
             return {"image": image, "ok": True, "tool": tool, "rootfs": res["dir"],
+                    "repaired": {"symlinks": sym["fixed"], "exec_bits": ex},
                     "attempts": tried, "evidence": pack, "unsolvable": False}
         log(f"[unpack] {tool} 没成：{str(res.get('error'))[:90]}")
 
