@@ -23,6 +23,16 @@ __all__ = ["scan", "lookup", "forms_of"]
 
 PAGE_EXT = (".asp", ".htm", ".html", ".shtml", ".js", ".cgi", ".xml")
 MAX_FILE = 512 * 1024
+# 我们自己产出的报告别当成固件页面：曾经有一份 triage 报告被写进了固件目录，
+# 结果被当成"页面"扫出来，给出一个没有参数的假路由。
+_SKIP_NAMES = ("fwmap-report.html", "report.html", "survey.html")
+
+
+def _skip(path: str) -> bool:
+    name = os.path.basename(path).lower()
+    if name in _SKIP_NAMES or name.startswith("fwmap-"):
+        return True
+    return False
 
 _RE_FORM_OPEN = re.compile(r"<form\b[^>]*>", re.I)
 _RE_ACTION = re.compile(r"""action\s*=\s*["']([^"']+)["']""", re.I)
@@ -98,6 +108,8 @@ def scan(rootfs: str, max_files: int = 800) -> list[dict]:
             if not name.lower().endswith(PAGE_EXT):
                 continue
             path = os.path.join(base, name)
+            if _skip(path):
+                continue
             try:
                 if os.path.getsize(path) > MAX_FILE:
                     continue
@@ -135,16 +147,24 @@ def lookup(forms: list[dict], function: str) -> dict | None:
     def last_seg(uri: str) -> str:
         return uri.rstrip("/").rsplit("/", 1)[-1].lower()
 
+    def best(cands: list[dict]) -> dict | None:
+        """同一个 URL 有多条记录时，取参数最全的那条（页面上字段才是真实提交的）。"""
+        if not cands:
+            return None
+        return max(cands, key=lambda f: len(f["params"]))
+
     for f in forms:
         if last_seg(f["uri"]) == low:
-            return f
+            return best([x for x in forms if last_seg(x["uri"]) == low])
     for f in forms:
         seg = last_seg(f["uri"])
         if seg.startswith(low) or low.startswith(seg):
-            return f
+            return best([x for x in forms
+                         if last_seg(x["uri"]).startswith(low) or low.startswith(
+                             last_seg(x["uri"]))])
     for f in forms:
         if low in f["uri"].lower():
-            return f
+            return best([x for x in forms if low in x["uri"].lower()])
     for f in forms:
         if any(low == p.lower() for p in f["params"]):
             return f
