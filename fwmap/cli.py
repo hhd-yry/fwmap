@@ -356,6 +356,14 @@ def main(argv: list[str] | None = None) -> int:
     tl = sub.add_parser("tools", help="列出智能体能调用的工具（名字 / 用途 / 参数）")
     tl.set_defaults(func=cmd_tools)
 
+    rt = sub.add_parser("routes", help="自己判断固件用哪种注册方式，抽出 URL→参数名")
+    rt.add_argument("binary", help="Web 服务的 ELF（如 bin/webs）")
+    rt.add_argument("--rootfs", help="解包后的 rootfs（有网页就能抽表单字段）")
+    rt.add_argument("--no-llm", action="store_true",
+                    help="不问模型，直接用最便宜的机制（扫网页 → 字符串表）")
+    rt.add_argument("--json", help="把结果写到这个文件")
+    rt.set_defaults(func=cmd_routes)
+
     sv = sub.add_parser("serve", help="把本机模型变成 HTTP 服务，给别的机器用（如虚拟机）")
     sv.add_argument("--host", default="127.0.0.1",
                     help="监听地址（默认只本机；给虚拟机用得用 0.0.0.0）")
@@ -437,6 +445,41 @@ def cmd_tools(args) -> int:
         print(f"\n  {t['name']}\n    {t['desc']}")
         for k, v in (t["args"] or {}).items():
             print(f"      - {k}: {v}")
+    return 0
+
+
+def cmd_routes(args) -> int:
+    """自己判断「这台固件用哪种注册方式」，再抽出 URL → 参数名。
+
+    模型只负责选机制（枚举里的一个），抽路由是确定性代码干的，
+    抽完能不能用由固件自己回答（三对照探测）。
+    """
+    from . import discover
+
+    chat = None
+    if getattr(args, "no_llm", False):
+        def chat(messages, **kw):                          # noqa: E306
+            return '{"mechanism": "page_derived", "confidence": 0.5, "reason": "--no-llm"}'
+
+    try:
+        out = discover.discover(args.binary, args.rootfs, chat=chat, log=print)
+    except Exception as ex:                                # noqa: BLE001
+        print(f"[!] 发现失败：{ex}")
+        return 1
+
+    print(f"\n机制：{out['plan']['mechanism']}（置信 {out['plan']['confidence']:.2f}）")
+    print(f"路由：{out['routes_count']} 条")
+    for r in out["routes"][:20]:
+        params = ", ".join(r["params"][:4]) or "（没有字段）"
+        print(f"  {r['uri']:44s} {params}")
+    if out["routes_count"] > 20:
+        print(f"  …… 还有 {out['routes_count'] - 20} 条")
+    if args.json:
+        import json as _json
+
+        with open(args.json, "w", encoding="utf-8") as fh:
+            _json.dump(out, fh, ensure_ascii=False, indent=1)
+        print(f"\n已写出：{args.json}")
     return 0
 
 
