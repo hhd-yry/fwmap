@@ -60,6 +60,34 @@ def _params_in(block: str) -> list[str]:
     return out
 
 
+_RE_CGI = re.compile(r"""["']([^"'\s]*?/(?:cgi-bin/)?[\w\-]+\.cgi)(?:\?([^"'\s]*))?["']""")
+_RE_QS = re.compile(r"([A-Za-z_][\w\-]{0,30})=")
+
+
+def cgi_routes(text: str) -> list[dict]:
+    """从页面/JS 里抽 CGI 入口：`index.cgi?v2_action=xxx&...`
+
+    很多固件（D-Link 的 enduser 固件就是）没有 /goform，只有一个 CGI 分发器：
+    URL 永远是某个 .cgi，功能靠 query 里的 action 区分。
+    这种形态下"参数名"就是 query 里的键，比瞎猜强得多。
+    """
+    out: list[dict] = []
+    seen: set[tuple[str, tuple[str, ...]]] = set()
+    for m in _RE_CGI.finditer(text):
+        raw, qs = m.group(1), (m.group(2) or "")
+        uri = "/" + raw.split("/")[-1]          # 只保留文件名：/index.cgi
+        params = []
+        for k in _RE_QS.findall(qs):
+            if k not in params and k not in ("submit", "action"):
+                params.append(k)
+        key = (uri, tuple(params))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"uri": uri, "params": params, "kind": "cgi"})
+    return out
+
+
 def forms_of(text: str) -> list[dict]:
     """从一个页面的文本里抽出它的表单：[{uri, params}]。"""
     found: list[dict] = []
@@ -94,6 +122,13 @@ def forms_of(text: str) -> list[dict]:
     if not found:
         for m in _RE_GOFORM.finditer(text):
             add(m.group(1), _params_in(text))
+
+    # 4) CGI 分发器形态（index.cgi?v2_action=xxx）：和表单并存，不互斥
+    for r in cgi_routes(text):
+        key = (r["uri"], tuple(r["params"]))
+        if key not in seen:
+            seen.add(key)
+            found.append(dict(r))
     return found
 
 

