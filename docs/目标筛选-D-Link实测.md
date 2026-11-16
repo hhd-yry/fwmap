@@ -238,3 +238,44 @@ POST /fwupdate.cgi  → 同样崩
 
 **不作为漏洞上报。** 这条正好印证了对照组纪律：
 先证明"和输入有关"，再谈漏洞。
+### 8.5 B2 路线：transmission / miniupnpd —— 在 user-mode 模拟下起不来
+
+`usr/bin/transmission-daemon` 是 **Transmission 2.82**（2013 年的版本，CVE 库里有一堆）。
+
+```
+版本：Transmission/2.82
+启动：chroot $R /usr/bin/transmission-daemon -f -T -p 9091 -g /tmp/trans -w /tmp/dl
+      --no-dht --no-lpd --no-portmap
+```
+
+结果：**进程活着，但 9091 一直不监听，配置文件也不生成**。
+
+strace 看它卡在 `nanosleep(100ms)` 的循环里，另有一个线程挂在 futex 上 —— 
+典型的"守护进程初始化没完成"。已经排除的：
+
+| 尝试 | 结果 |
+|---|---|
+| 挂 /proc /sys /dev 进 chroot | 还是不起 |
+| 关掉 DHT / LPD / 端口映射 | 还是不起 |
+| 等 10 秒（qemu 慢） | 还是不起 |
+| 给它 /tmp 配置目录（chmod 全开） | 配置文件根本没写出来 |
+
+`miniupnpd` 同理 —— 它要真实的网络接口和 iptables，user-mode 下更不可能。
+
+**结论：user-mode（qemu-user + chroot）只能跑"单进程、无守护化、无复杂网络"的目标。**
+`index.cgi` 这种 CGI 能跑；`transmission-daemon` / `miniupnpd` 这种要网络栈和线程的，
+必须上 **qemu-system 全系统模拟**（或用真机）。
+
+### 8.6 今晚的净结果
+
+| 结论 | 性质 |
+|---|---|
+| DIR-816L 能解包、能跑 index.cgi | ✅ 能力已验证 |
+| Web 后台结构摸清（action 分发 / 明文会话 / 鉴权链） | ✅ 情报 |
+| 4 条强源链（JSON→sprintf/strcpy 等） | ⏳ 待过鉴权 |
+| fwupdate.cgi 崩溃 | ❌ 环境假象，已排除 |
+| transmission / miniupnpd RPC | ❌ user-mode 起不来 |
+| 新漏洞 | **0 个** |
+
+**下一步的岔路口**：要么上 qemu-system（半天到一天，之后所有守护进程都能跑），
+要么换一台"没有守护进程、纯 CGI"的目标（现有工具直接可用）。
