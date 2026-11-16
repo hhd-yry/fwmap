@@ -28,12 +28,18 @@ HANDLER = "handler"          # 和负对照明显不同 → 路由存在
 UNKNOWN = "unknown"          # 服务没起来 / 判不出来
 
 
-def _req(path: str) -> dict:
-    return {"method": "POST", "path": path, "headers": {"Connection": "close"},
-            "body": "x=1", "param": "x", "value": "1"}
+def _req(path: str, port: int = 80, host: str = "127.0.0.1",
+         method: str = "POST") -> dict:
+    body = "x=1" if method == "POST" else ""
+    return {"method": method, "path": path, "host": host, "port": port,
+            "headers": {"Host": f"{host}:{port}",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Content-Length": str(len(body)),
+                        "Connection": "close"},
+            "body": body, "param": "x", "value": "1", "function": "<route-probe>"}
 
 
-def signature(resp: str) -> tuple[int, str]:
+def signature(resp: str, full_len: int | None = None) -> tuple[int, str]:
     """把响应压成一个可比较的签名：长度 + 关键标记。
 
     只看长度会被"页面里带时间戳/随机数"骗到，所以再抽一个标记：
@@ -46,7 +52,8 @@ def signature(resp: str) -> tuple[int, str]:
                  "location.assign", "document.location"):
         if word in low:
             marks.append(word)
-    return len(body), ",".join(marks)
+    # 长度优先用完整响应长度（resp 可能被截到 300 字符，会把 184 和 300 判成一样）
+    return (full_len if full_len is not None else len(body)), ",".join(marks)
 
 
 def classify(candidate: str, negative: tuple[int, str], positive: tuple[int, str],
@@ -73,16 +80,20 @@ def probe(paths: list[str], run_request, runtime: dict, port: int = 80,
     log = log or (lambda *a: None)
     bogus = "/" + "".join(random.choices(string.ascii_lowercase, k=12))
 
-    neg_res = run_request(_req(bogus), runtime, timeout=timeout)
-    neg = signature(neg_res.get("resp") or "")
-    pos_res = run_request(_req("/"), runtime, timeout=timeout)
-    pos = signature(pos_res.get("resp") or "")
+    neg_res = run_request(_req(bogus, port), runtime, timeout=timeout)
+    neg = signature(neg_res.get("resp") or "", neg_res.get("resp_len"))
+    # 正对照用 dyn 里那条「绝对无害的 GET /」—— 和动态验证用同一把尺子，
+    # 免得两处对「服务活着」的判断标准不一致。
+    from . import poc as _poc
+
+    pos_res = run_request(_poc.control_request(port), runtime, timeout=timeout)
+    pos = signature(pos_res.get("resp") or "", pos_res.get("resp_len"))
     log(f"[routes] 负对照 {bogus} → {neg[0]}B {neg[1]!r}；正对照 / → {pos[0]}B")
 
     out: dict[str, dict] = {}
     for p in paths:
-        res = run_request(_req(p), runtime, timeout=timeout)
-        sig = signature(res.get("resp") or "")
+        res = run_request(_req(p, port), runtime, timeout=timeout)
+        sig = signature(res.get("resp") or "", res.get("resp_len"))
         verdict = classify(p, neg, pos, sig)
         out[p] = {"verdict": verdict, "len": sig[0], "mark": sig[1],
                   "status": res.get("status")}

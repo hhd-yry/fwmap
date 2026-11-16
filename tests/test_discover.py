@@ -87,10 +87,62 @@ def main() -> int:
     # 6) 探测验收：失败不能报成功
     out = discover.discover(binp, tmp, chat=fake_chat('{"mechanism":"page_derived"}'),
                             probe=lambda uris: {"checked": len(uris), "handler": 0},
-                            log=lambda *_: None)
+                            log=lambda *_: None, rounds=1, use_profile=False)
     ok &= check("discover 返回路由和计划", out["routes_count"] == 1 and out["plan"], out)
-    ok &= check("探测结果原样带回（0 条可用）", out["probe"]["handler"] == 0, out["probe"])
+    ok &= check("验收失败的结论不谎报", out["validated"] is False, out["validated"])
     ok &= check("写了 profile 文件", os.path.exists(out["profile"]), out["profile"])
+
+    # 7) 回环：第一轮验不过，第二轮换机制并验过
+    calls = {"n": 0}
+
+    def picky_chat(messages, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return '{"mechanism": "page_derived", "confidence": 0.8, "reason": "有表单"}'
+        return '{"mechanism": "strings_goform", "confidence": 0.6, "reason": "上次没对上"}'
+
+    def flaky_probe(uris):
+        # 第一轮的 /goform/... 全部不应答；第二轮的偏不应答 —— 用路径区分
+        bad = all("formStaDrvSetup" in u for u in uris)
+        return {"checked": len(uris), "handler": 0 if bad else 2}
+
+    out2 = discover.discover(binp, tmp, chat=picky_chat, probe=flaky_probe,
+                             log=lambda *_: None, rounds=3, use_profile=False)
+    ok &= check("回环真的试了两种机制", [t["mechanism"] for t in out2["tried"]]
+                == ["page_derived", "strings_goform"], out2["tried"])
+    ok &= check("第二个机制被验收通过", out2["validated"] is True, out2["validated"])
+    ok &= check("最终用的是通过验收的那个", out2["plan"]["mechanism"] == "strings_goform",
+                out2["plan"])
+
+    # 8) 模型反复选同一条 → 按兜底顺序换，不会原地打转
+    stuck = {"n": 0}
+
+    def stuck_chat(messages, **kw):
+        stuck["n"] += 1
+        return '{"mechanism": "page_derived", "confidence": 0.9}'
+
+    out3 = discover.discover(binp, tmp, chat=stuck_chat,
+                             probe=lambda uris: {"checked": len(uris), "handler": 0},
+                             log=lambda *_: None, rounds=2, use_profile=False)
+    mechs = [t["mechanism"] for t in out3["tried"]]
+    ok &= check("同一条不会试两遍", len(mechs) == len(set(mechs)), mechs)
+    ok &= check("第二轮回落到兜底机制", mechs[-1] != "page_derived", mechs)
+
+    # 9) profile 复用：先用一个干净的 profile 目录成功一次，第二次不该再问模型
+    os.environ["FWMAP_PROFILE_DIR"] = os.path.join(tmp, "profiles")
+    discover.discover(binp, tmp, chat=fake_chat('{"mechanism":"strings_goform"}'),
+                      probe=lambda uris: {"checked": len(uris), "handler": 2},
+                      log=lambda *_: None, rounds=1, use_profile=False)
+
+    def boom_chat(messages, **kw):
+        raise AssertionError("不该再问模型")
+
+    out4 = discover.discover(binp, tmp, chat=boom_chat,
+                             probe=lambda uris: {"checked": len(uris), "handler": 2},
+                             log=lambda *_: None, rounds=1, use_profile=True)
+    ok &= check("验收过的结论写进 profile 并被复用",
+                out4["plan"]["mechanism"] == "strings_goform", out4["plan"])
+    os.environ.pop("FWMAP_PROFILE_DIR", None)
 
     import shutil
 

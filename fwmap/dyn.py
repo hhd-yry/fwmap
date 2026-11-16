@@ -191,6 +191,9 @@ def _attempt(req: dict, runtime: dict, timeout: float, ready_timeout: float) -> 
                 "signal": _signal_of(out + err, code) if crashed else "",
                 "elapsed": round(time.time() - t0, 1),
                 "resp": resp[:300].decode("latin-1", "replace"),
+                # 完整长度要单独带出来：resp 只留了 300 字符，
+                # 光看它的长度会把 184 字节和 300 字节的页面判成一样（路由探测就被这个骗过）
+                "resp_len": len(resp),
                 "stdout": out[:600], "stderr": err[:600], "runtime": label}
     finally:
         _kill(proc)

@@ -26,7 +26,7 @@ import os
 import re
 import subprocess
 
-__all__ = ["evidence", "ask", "apply_plan", "discover", "MECHANISMS", "PROMPT"]
+__all__ = ["evidence", "ask", "apply_plan", "discover", "firmware_probe", "MECHANISMS", "PROMPT"]
 
 # 支持的机制。新固件用哪一条，由模型根据证据选，选完由代码执行。
 MECHANISMS = {
@@ -186,33 +186,168 @@ def _cache_path(binary: str) -> str:
     return os.path.join(base, f"{h}.json")
 
 
-def discover(binary: str, rootfs: str | None = None, *, chat=None, probe=None,
-             log=print, rounds: int = 2) -> dict:
-    """完整流程：证据 → 模型选路 → 代码执行 → 探测验收（→ 不满意就再来一轮）。"""
-    pack = evidence(binary, rootfs)
-    log(f"[discover] 证据：{pack.get('strings')} 条字符串、"
-        f"{pack.get('route_like_count')} 个路径候选、{pack.get('pages_forms', 0)} 个网页表单")
-    plan = ask(pack, chat=chat)
-    log(f"[discover] 模型选择：{plan['mechanism']}（置信 {plan['confidence']:.2f}）"
-        f" —— {plan['reason']}")
-
-    result = apply_plan(plan["mechanism"], binary, rootfs)
-    routes = result["routes"]
-    log(f"[discover] 抽出 {len(routes)} 条路由（{result['note']}）")
-
-    verdict = None
-    if probe and routes:
-        sample = [r["uri"] for r in routes[:3]]
-        verdict = probe(sample)          # 交给调用方决定怎么探测（需要固件能跑）
-        log(f"[discover] 探测结果：{verdict}")
-
-    out = {"binary": binary, "plan": plan, "routes": routes[:400],
-           "routes_count": len(routes), "probe": verdict,
-           "profile": _cache_path(binary)}
+def _load_profile(binary: str) -> dict | None:
     try:
-        with open(out["profile"], "w", encoding="utf-8") as fh:
-            json.dump({"plan": plan, "routes_count": len(routes)}, fh,
-                      ensure_ascii=False, indent=1)
+        with open(_cache_path(binary), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if data.get("mechanism") not in MECHANISMS:
+        return None
+    return data
+
+
+def _save_profile(binary: str, *, mechanism: str, validated: bool,
+                  routes: int, reason: str = "") -> str:
+    path = _cache_path(binary)
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"mechanism": mechanism, "validated": bool(validated),
+                       "routes": routes, "reason": reason,
+                       "when": __import__("time").strftime("%Y-%m-%d %H:%M")},
+                      fh, ensure_ascii=False, indent=1)
     except OSError:
         pass
-    return out
+    return path
+
+
+# 模型反复选同一条时的兜底顺序：先便宜的后贵的
+FALLBACK_ORDER = ("page_derived", "strings_goform", "form_define",
+                  "pointer_table", "strcmp_chain")
+
+
+def _feedback(tried: list[dict]) -> str:
+    """把「试过什么、为什么不行」整理成给模型看的反馈。"""
+    lines = []
+    for t in tried:
+        v = t.get("probe")
+        if v is None:
+            why = "抽到了路由，但没条件验收（没有 qemu）"
+        elif v.get("handler"):
+            why = f"抽出 {t['routes']} 条，探测 {v['checked']} 条，{v['handler']} 条能应答"
+        else:
+            why = (f"抽出 {t['routes']} 条，探测 {v['checked']} 条，**一条都不能应答**"
+                   f" —— 这条路在这台固件上不对")
+        lines.append(f"- {t['mechanism']}：{why}")
+    return "\n".join(lines)
+
+
+def discover(binary: str, rootfs: str | None = None, *, chat=None, probe=None,
+             log=print, rounds: int = 3, use_profile: bool = True) -> dict:
+    """完整流程：证据 → 模型选机制 → 代码抽取 → 固件验收 → 不行就换一条再来。
+
+    和上一版的区别只有一点，但很关键：**选错不是终点**。
+    探测（固件自己答不答话）失败时，把失败原因喂回模型，让它换一种机制；
+    模型如果还选同一条，就按 FALLBACK_ORDER 依次试剩下的 —— 直到有一条被验收通过，
+    或者全部试完（那时如实说「都没对上」，而不是假装找到了）。
+    """
+    cached = _load_profile(binary) if use_profile else None
+    tried: list[dict] = []
+    pack = None
+
+    if cached and cached.get("validated"):
+        plan = {"mechanism": cached["mechanism"], "confidence": 1.0,
+                "reason": f"上次在这台固件上验收通过（{cached.get('when', '')}）", "raw": ""}
+        log(f"[discover] 用上次的结论：{plan['mechanism']}（跳过模型）")
+    else:
+        pack = evidence(binary, rootfs)
+        log(f"[discover] 证据：{pack.get('strings')} 条字符串、"
+            f"{pack.get('route_like_count')} 个路径候选、{pack.get('pages_forms', 0)} 个网页表单")
+        plan = ask(pack, chat=chat)
+
+    best = None
+    for rnd in range(max(1, rounds)):
+        mech = plan["mechanism"]
+        if any(t["mechanism"] == mech for t in tried):
+            mech = next((m for m in FALLBACK_ORDER
+                         if m not in {t["mechanism"] for t in tried}), "")
+            if not mech:
+                break
+            plan = {"mechanism": mech, "confidence": 0.0,
+                    "reason": "这条已经试过了，按兜底顺序换一条", "raw": ""}
+
+        log(f"[discover] 第 {rnd + 1} 轮：{mech}（置信 {plan['confidence']:.2f}）"
+            f" —— {plan['reason'][:80]}")
+        result = apply_plan(mech, binary, rootfs)
+        routes = result["routes"]
+        log(f"[discover]   抽出 {len(routes)} 条（{result['note']}）")
+
+        verdict = None
+        if probe and routes:
+            verdict = probe([r["uri"] for r in routes[:3]])
+            log(f"[discover]   验收：{verdict}")
+
+        rec = {"mechanism": mech, "confidence": plan["confidence"],
+               "reason": plan["reason"], "routes": len(routes),
+               "probe": verdict, "note": result["note"]}
+        tried.append(rec)
+
+        if verdict is None:
+            # 没法验收：抽到东西就算可用的最好结果，但如实标「未验收」
+            if routes:
+                best = rec
+                break
+        elif verdict.get("handler"):
+            best = rec
+            break
+
+        if rnd + 1 >= rounds:
+            break
+        # 带着失败原因重问
+        if pack is None:
+            pack = evidence(binary, rootfs)
+        fb = dict(pack, tried=_feedback(tried),
+                  hint="上一次选的机制在这台固件上没通过验收，换一个更可能的")
+        plan = ask(fb, chat=chat)
+        if plan["mechanism"] in {t["mechanism"] for t in tried}:
+            plan = {"mechanism": next((m for m in FALLBACK_ORDER
+                                       if m not in {t["mechanism"] for t in tried}),
+                                      plan["mechanism"]),
+                    "confidence": 0.0, "reason": "模型又选了试过的，改用兜底顺序", "raw": ""}
+
+    final = best or (tried[-1] if tried else None)
+    validated = bool(final and (final.get("probe") or {}).get("handler"))
+    routes = []
+    if final:
+        routes = apply_plan(final["mechanism"], binary, rootfs)["routes"]
+
+    profile = ""
+    if final:
+        profile = _save_profile(binary, mechanism=final["mechanism"],
+                                validated=validated, routes=len(routes),
+                                reason=final.get("reason", ""))
+
+    if validated:
+        log(f"[discover] 通过验收：{final['mechanism']}"
+            f"（{final['probe']['handler']}/{final['probe']['checked']} 条能应答）")
+    elif final and final["probe"] is not None:
+        log("[discover] 试过的机制都没通过验收 —— 这台固件可能不在目前的能力范围内，"
+            "不要把「没对上」当成「没有接口」")
+
+    return {"binary": binary, "plan": final or {}, "routes": routes[:400],
+            "routes_count": len(routes), "probe": (final or {}).get("probe"),
+            "validated": validated, "tried": tried, "profile": profile}
+
+def firmware_probe(binary: str, rootfs: str | None = None, port: int = 80,
+                   timeout: float = 8.0, sample: int = 3, log=print):
+    """返回一个「能真的问固件」的探针；没有 qemu 就返回 None。
+
+    为什么要用固件自己来验收：模型说这条路对，不算数；
+    把路由发过去，固件答不答话，才算数。
+    """
+    from . import dyn, routes as routes_mod
+
+    rt = dyn.find_runtime(dyn._guess_arch(binary), rootfs, binary)
+    if not rt:
+        return None
+
+    def _probe(uris):
+        out = routes_mod.probe(list(uris)[:sample], dyn.run_request, rt,
+                               port=port, timeout=timeout, log=log)
+        handler = sum(1 for v in out["routes"].values()
+                      if v["verdict"] == routes_mod.HANDLER)
+        return {"checked": len(out["routes"]), "handler": handler,
+                "routes": {k: v["verdict"] for k, v in out["routes"].items()},
+                "control": {"negative": out["negative"], "positive": out["positive"]}}
+
+    return _probe

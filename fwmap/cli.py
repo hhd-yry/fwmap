@@ -361,6 +361,9 @@ def main(argv: list[str] | None = None) -> int:
     rt.add_argument("--rootfs", help="解包后的 rootfs（有网页就能抽表单字段）")
     rt.add_argument("--no-llm", action="store_true",
                     help="不问模型，直接用最便宜的机制（扫网页 → 字符串表）")
+    rt.add_argument("--probe", action="store_true",
+                    help="把路由发过去，让固件自己验收（需要 Linux + qemu）")
+    rt.add_argument("--rounds", type=int, default=3, help="最多试几种机制（默认 3）")
     rt.add_argument("--json", help="把结果写到这个文件")
     rt.set_defaults(func=cmd_routes)
 
@@ -462,7 +465,12 @@ def cmd_routes(args) -> int:
             return '{"mechanism": "page_derived", "confidence": 0.5, "reason": "--no-llm"}'
 
     try:
-        out = discover.discover(args.binary, args.rootfs, chat=chat, log=print)
+        probe = discover.firmware_probe(args.binary, args.rootfs, log=print) \
+            if getattr(args, "probe", False) else None
+        if args.probe and probe is None:
+            print("[!] 这台机器没有能跑该固件的 qemu —— 只能抽路由，不能验收")
+        out = discover.discover(args.binary, args.rootfs, chat=chat, probe=probe,
+                                log=print, rounds=getattr(args, "rounds", 3))
     except Exception as ex:                                # noqa: BLE001
         print(f"[!] 发现失败：{ex}")
         return 1
