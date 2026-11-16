@@ -345,17 +345,17 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
              f"{' · LLM 复核已开' if res.get('agent') else ' · 未开 LLM 复核'}</div>")
 
     st = res["stats"]
-    L.append("<div class='card'><b>一句话</b>：" + e(st["oneline"]) + "</div>")
+    L.append("<div class='card'><b>简介：</b>：" + e(st["oneline"]) + "</div>")
 
     # 用户最想知道的一句话是「哪条」，而不是「有 40 条」。
     # 这里把链按「值得人看」的程度排一遍，直接点名 3 条 + 说清凭什么。
     picks = _top_picks(res)
-    L.append("<h2>先看这几条</h2>")
+    L.append("<h2>优先选择</h2>")
     if not picks:
         L.append("<div class='warn'>没有排出候选：要么没出链，要么链全被判成已公开/证据不足。"
                  "这不是“没有漏洞”，是“这一轮没筛出值得人看的”。</div>")
     else:
-        L.append("<div class='note'><b>如果只来得及看三条，看这三个。</b>"
+        L.append("<div class='note'><b>最有可能存在新漏洞的三个函数/端点。</b>"
                  "排序依据：没被公开报过 &gt; 输入是 HTTP 参数 &gt; 直接进命令执行/拷贝 "
                  "&gt; 跳数少 &gt; 端点没鉴权。这只是“优先顺序”，不是“这就是漏洞”。</div>")
         L.append("<table><tr><th>#</th><th>函数 / 端点</th><th>源 → 汇</th>"
@@ -385,14 +385,13 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
                      "多数是「公共 CVE 里已有同函数」或「源是配置值（弱源）」或"
                      "「跨多跳、中间过滤没核对」，摊在下面 ② 的表里，按需再翻。</div>")
 
-    L.append("<h2>动态验证做了吗</h2>")
+    L.append("<h2>是否进行动态验证</h2>")
     did_dyn = any(b.get("dyn") for b in res["binaries"])
     if did_dyn:
-        L.append("<div class='note'>做了，见下面的 <b>④ 动态验证</b>。"
-                 "判定是「真发请求」得到的：先打一条无害的 <code>GET /</code> 做对照组，"
+        L.append("<div class='note'> 是 <b>见(4)动态验证</b>。"
                  "对照组就崩说明是环境问题，不算漏洞。</div>")
     else:
-        L.append("<div class='warn'><b>没做。</b>报告里没有任何一条是“真打过去”的结论。"
+        L.append("<div class='warn'><b>否</b>报告里没有任何一条是“真打过去”的结论。"
                  "要么没开 <code>--dyn</code>，要么这台机器没有对应架构的 qemu-user。"
                  "这一步需要 Linux + qemu（绑 80 端口还要 root）。<br>"
                  "想看这几条到底打不打得动，把下面这些请求发到跑起来的固件上，"
@@ -400,7 +399,7 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
                  "<span class='mono small'>fwmap dyn &lt;flow.json&gt; --binary &lt;ELF&gt; "
                  "--rootfs &lt;rootfs&gt; --cmd \"id &gt; /tmp/pwned\" --check /tmp/pwned</span></div>")
     if not did_dyn and picks:
-        L.append("<div class='card'><b>前三条的手工验证请求（不依赖 qemu，自己发）</b>")
+        L.append("<div class='card'><b>前三条的手工验证请求（不依赖 qemu）</b>")
         for p in picks:
             reqs = _dry_requests(p["chain"], p["endpoint"])
             if reqs:
@@ -489,7 +488,7 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
             if gaps:
                 L.append("<div class='small' style='margin-top:6px'><b>这批链共同的缺口：</b>"
                          + "；".join(f"{e(k)}（{n} 条）" for k, n in gaps)
-                         + "。缺口不等于失败——它说明这条链证到了哪一步，以及下一刀该切哪儿。</div>")
+                         + "。缺口不等于失败</div>")
             ns = b.get("novelty_summary")
             if ns:
                 L.append("<div class='small' style='margin-top:6px'>新颖性核对："
@@ -515,7 +514,7 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
     elif res.get("agent") and res.get("agent_rows"):
         L.append("<h2>③ LLM 复核</h2>")
         L.append("<div class='note'>LLM 只回答“危险调用前有没有真正的保护”，"
-                 "并且必须引用语句编号（证据由我们取回，模型编不了）。裁决由规则给出。</div>")
+                 "并且必须引用语句编号,裁决由规则给出。</div>")
         for r in res["agent_rows"]:
             c, j = r["chain"], r["judge"]
             L.append("<div class='card'>")
@@ -697,6 +696,29 @@ def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None
             out["binaries"].append(b)
             continue
 
+        # 端点没对上 handler 时，退一步去固件自己的网页里找「表单上写的 URL 和字段」。
+        # 这不是猜测：页面上写的就是浏览器真实提交的东西。实测这一步能把
+        # formWdsEncrypt 纠正成 /goform/formWdsEncrypt5G（跟函数名不一样）。
+        try:
+            from . import pages as pages_mod
+            forms = pages_mod.scan(rootfs)
+            hit = 0
+            for c in b["chain_list"]:
+                if c.get("verdict", "keep") != "keep":
+                    continue
+                f = pages_mod.lookup(forms, c.get("function", ""))
+                if f:
+                    c["page_uri"] = f["uri"]
+                    c["page_params"] = f["params"]
+                    c["page_file"] = f["file"]
+                    hit += 1
+            if forms:
+                b["pages"] = {"files": len({f["file"] for f in forms}),
+                              "forms": len(forms), "matched": hit}
+                log(f"        网页兜底：{len(forms)} 个表单，命中 {hit} 条链")
+        except Exception as ex:                              # noqa: BLE001
+            b["pages_error"] = str(ex)
+
         if use_agent:
             log(f"        LLM 复核（前 {top_chains} 条，每条 {samples} 次采样）…")
             try:
@@ -751,6 +773,29 @@ def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None
                     log("        " + " · ".join(f"{k} {v}"
                                                 for k, v in sorted(out_dyn["counts"].items())))
                     total_exec += out_dyn["counts"].get("exec-confirmed", 0)
+                    # 证据优先于推理：真打穿了，就不许裁决还写"污染已断"。
+                    # 不这么做，报告会出现"④ 说命令执行了、③ 说不是漏洞"的自相矛盾。
+                    done = {}
+                    for it in out_dyn["results"]:
+                        fn = (it["chain"] or {}).get("function")
+                        for row in it["rows"]:
+                            if (row["result"] or {}).get("status") == "exec-confirmed":
+                                done[fn] = row
+                    flipped = 0
+                    for row in b.get("agent_rows") or []:
+                        fn = row["chain"].get("function")
+                        if fn in done and row["judge"]["verdict"] != "CONFIRMED":
+                            hit = done[fn]
+                            old = row["judge"]["verdict"]
+                            row["judge"]["verdict"] = "CONFIRMED"
+                            row["judge"]["reason"] = (
+                                f"动态验证推翻静态裁决（原判 {old}）：注入的命令真的执行了。"
+                                f"载荷 {hit['req']['param']}={hit['req']['value']!r}，"
+                                f"副产物 {(hit['result'].get('effect') or '').strip()[:80]!r}")
+                            row["judge"]["overridden_from"] = old
+                            flipped += 1
+                    if flipped:
+                        log(f"        {flipped} 条裁决被动态证据推翻（改成 CONFIRMED）")
             except Exception as ex:                          # noqa: BLE001
                 b["dyn_error"] = str(ex)[:200]
                 log(f"        动态验证失败：{str(ex)[:120]}")

@@ -346,6 +346,26 @@ PoC 按汇的类别选载荷：
 在真固件（Edimax BR-6478AC）上把 webs 跑起来的完整踩坑记录、以及
 NVRAM（`/dev/mtdblock0` ← `etc/config.bin`）怎么补，见
 [`docs/动态验证-固件起机.md`](docs/动态验证-固件起机.md)。
+### 打不中的头号原因：URL 和参数名不对
+
+动态验证打空，多数时候不是"没有漏洞"，是**打错了地方**。三个来源按可信度取：
+
+| 顺序 | 来源 | 说明 |
+|---|---|---|
+| 1 | M2 抓到的注册表 | `websFormDefine("name", handler)` 之类，最权威 |
+| 2 | **固件自带的网页** | `<form action="/goform/xxx">` + `<input name="yyy">` |
+| 3 | 按函数名拼 | `/goform/<函数名>` + 猜参数名，最容易打空 |
+
+第 2 条实测很值：Edimax 上从 165 个页面文件里抽出了「URL → 字段名」，
+`formDNSProxyrules` 的真实字段是 `url1` / `ProxyruleEnabled`，而不是兜底猜的 `input`。
+之前拿 `input=` 打，固件直接回 `ERR_MSG` —— handler 根本没走到 `strcpy`。
+
+**三对照判路由**（`fwmap/routes.py`）：正对照 `/`、负对照（瞎编路径）、再打候选。
+和负对照一样就是大概不存在，不一样就是存在，服务没起来就说"不知道"。
+**不把"不知道"写成"不存在"。**
+
+> 局限：只覆盖有页面的功能；`action` 由 JS 拼的抽不到；所有表单打同一个总入口时，
+> 参数名还在、URL 对不上。
 
 
 

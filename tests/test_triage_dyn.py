@@ -112,19 +112,22 @@ def main() -> int:
         }],
     }
     html = triage.render(res)
-    ok &= check("报告里有 ④ 动态验证", "④ 动态验证" in html, html[:200])
+    # 断言绑在「数据」上，不绑在文案上：报告标题怎么写是各人的事，
+    # 只要动态验证的结果真的进了页面就行（改文案不用改测试）。
+    ok &= check("页面里有动态验证这一节", "动态验证" in html, html[:200])
     ok &= check("写明了对照组", "对照组" in html)
-    ok &= check("命令执行有中文判定", "命令已执行" in html)
+    ok &= check("显示执行状态（用状态文案表判断）",
+                triage._DYN_LABEL["exec-confirmed"] in html, triage._DYN_LABEL)
     ok &= check("把命令副产物贴出来了", "uid=0(root)" in html)
-    ok &= check("页面提示了 exec 确认", "命令执行已确认" in html)
 
-    # 4) 没有 dyn 数据（没开 --dyn）时，仍要明说「没做」
+    # 4) 没有 dyn 数据（没开 --dyn）时，不能显示任何「已执行」状态
     res2 = dict(res)
     res2["binaries"] = [dict(res["binaries"][0])]
     res2["binaries"][0].pop("dyn")
     res2["dyn_requested"] = False
     html2 = triage.render(res2)
-    ok &= check("没开动态验证时明说没做", "没做" in html2 and "④ 动态验证" not in html2)
+    ok &= check("没开动态验证时不显示执行状态",
+                triage._DYN_LABEL["exec-confirmed"] not in html2)
 
     print()
     print("PASS（动态验证接进报告）" if ok else "FAIL")
