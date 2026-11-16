@@ -471,3 +471,35 @@ FUN_00410ce4         get_cgi(html_response_page) → sprintf[bof] ×2跳
 
 **下一步**：`strings sbin/httpd` 找 `login.cgi` 处理函数引用哪些文件/设备，
 把缺失的补出来；补不出来就换 pre-auth 就可达的端点（`usb_test.cgi` 之类）。
+### 9.7 B 路线结果：26 个虚拟端点，全部要登录
+
+把 M2 抽出的端点逐个打了一遍（GET + POST，每次重启 httpd 避免相互影响）：
+
+```
+logout.cgi  mac_clone.cgi  ntp_sync.cgi  online_firmware_check.cgi
+ping.cgi  ping6_response.cgi  pppoe_00_connect/disconnect.cgi
+reboot.cgi  restore_default.cgi  save_configuration.cgi  save_log.cgi
+send_log_email.cgi  upload_configuration.cgi  usb_test.cgi  ...
+```
+
+结果**完全一致**：
+
+| 方法 | 响应 | httpd |
+|---|---|---|
+| GET | 3196 字节 = **登录页** | 活着 |
+| POST（含 `a=1`、空 body、大 body） | 空响应 | 活着 |
+
+**没有一个端点是 pre-auth 可达的。** 只要没登录，httpd 统一把你导到登录页；
+POST 一律空响应（有的超过 4 KB 还会重置连接）。
+
+例外只有 `save_configuration.cgi` / `send_log_email.cgi` 的 GET 返回 4000 字节
+（大概是文件名太长的报错页），也一样没有实际功能。
+
+### 9.8 结论：这台必须登录才能打，而我们登不进去
+
+```
+要打 html_response_page → sprintf  →  必须登录
+登录唯一入口 login.cgi  →  在 chroot 里无条件 SIGSEGV（环境缺失）
+```
+
+**所以 DIR-615 C2 这条路，在 user-mode 模拟下走不通。** 它不是没洞，是我们到不了。
