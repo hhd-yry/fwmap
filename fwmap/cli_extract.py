@@ -6,9 +6,13 @@ from . import toolbus
 
 
 def cmd_extract(args) -> int:
-    from . import tools_unpack
+    from . import tools_unpack, tools_unwrap
 
     tools_unpack.register_all()
+    tools_unwrap.register_all()
+    if getattr(args, "external", None):
+        n = tools_unwrap.load_external(args.external)
+        print(f"挂载外部脚本 {n} 个：{args.external}")
 
     cap = args.capability
     cat = toolbus.catalog(cap)

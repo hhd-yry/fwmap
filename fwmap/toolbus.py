@@ -40,29 +40,32 @@ class Tool:
     没有它，注册直接抛错 —— 宁可少一个工具，也不要一个会撒谎的工具。
     """
 
-    def __init__(self, name: str, capability: str, cmd: list[str], success,
+    def __init__(self, name: str, capability: str, cmd: list[str] | None, success,
                  *, accepts: str = "", failure_hint: str = "",
                  note: str = "", timeout: int = 600, needs: str | None = None,
-                 version_cmd: list[str] | None = None):
+                 version_cmd: list[str] | None = None, python=None):
         if capability not in CAPABILITIES:
             raise ValueError(f"未知能力分类：{capability}")
         if not callable(success):
             raise ValueError(f"{name}: 必须提供 success 判据（不许只靠退出码）")
         self.name = name
         self.capability = capability
-        self.cmd = cmd
+        self.cmd = cmd or []
+        self.python = python          # 纯 Python 工具：python(src, out) -> dict
         self.success = success
         self.accepts = accepts
         self.failure_hint = failure_hint
         self.note = note
         self.timeout = timeout
-        self.needs = needs or cmd[0]
+        self.needs = needs or (cmd[0] if cmd else "")
         self.version_cmd = version_cmd
 
     def available(self) -> bool:
         return self.path() is not None
 
     def path(self) -> str | None:
+        if self.python is not None:      # 内置 Python 工具，不依赖外部程序
+            return "<python>"
         """找这个工具的可执行文件。
 
         不只看 PATH：Windows 上 7-Zip 默认装在 `C:\\Program Files\\7-Zip`，
@@ -134,6 +137,23 @@ def run(tool: Tool | str, src: str, outdir: str, *, timeout: int | None = None) 
                 "error": f"这台机器没装 {tool.needs}", "provenance": {}}
 
     os.makedirs(outdir, exist_ok=True)
+    if tool.python is not None:                       # 内置工具：直接调函数
+        t0 = time.time()
+        try:
+            tool.python(src, outdir)
+        except Exception as ex:                       # noqa: BLE001
+            return {"ok": False, "tool": tool.name, "error": f"{type(ex).__name__}: {ex}"[:160],
+                    "provenance": {"seconds": round(time.time() - t0, 1)}}
+        try:
+            verdict = tool.success(outdir) or {}
+        except Exception as ex:                       # noqa: BLE001
+            verdict = {"ok": False, "detail": f"验收时出错：{ex}"}
+        return {"ok": bool(verdict.get("ok")), "tool": tool.name,
+                "capability": tool.capability, "dir": outdir,
+                "detail": str(verdict.get("detail") or "")[:200], "verdict": verdict,
+                "stdout": "", "stderr": "",
+                "provenance": {"cmd": ["<python>", tool.name], "exit": 0,
+                               "seconds": round(time.time() - t0, 1)}}
     cmd = [c.format(src=src, out=outdir) for c in tool.cmd]
     # 第一条命令用解析出来的真实路径（PATH 里没有、但装在固定目录的工具）
     if cmd and cmd[0] == tool.needs:
@@ -185,6 +205,34 @@ _PROMPT = """你要把一个固件镜像解开。已知信息：
 - 如果头是明显的厂商私有加密且没有任何 decrypt 工具可用，返回空 order。"""
 
 
+# 魔数 → 该先试谁。没模型时靠它排序；有模型时只用来补漏。
+_PREFER = {
+    b"\x27\x05\x19\x56": ("uimage",),
+    b"HDR0": ("trx",),
+    b"hsqs": ("unsquashfs", "7z", "unblob", "binwalk"),
+    b"sqsh": ("sasquatch", "7z", "unblob", "binwalk"),
+    b"shsq": ("sasquatch", "7z", "unblob", "binwalk"),
+    b"CRAM": ("cramfsck", "7z", "unblob"),
+    b"UBI#": ("ubireader", "unblob"),
+    b"\x1f\x8b\x08": ("gzip-stream", "gzip", "unblob"),
+    b"\xfd7zXZ": ("xz-stream", "unblob"),
+    b"BZh": ("bzip2-stream", "unblob"),
+}
+
+
+def preferred(src: str, names: set[str]) -> list[str]:
+    """按文件头魔数给出"该先试谁"。这是没模型时的排序依据，也是模型漏选时的补丁。"""
+    try:
+        with open(src, "rb") as fh:
+            head = fh.read(64)
+    except OSError:
+        return []
+    for magic, order in _PREFER.items():
+        if head.startswith(magic):
+            return [n for n in order if n in names]
+    return []
+
+
 def choose(src: str, *, capability: str = "unpack", chat=None,
            evidence: dict | None = None, log=None) -> list[str]:
     """让模型排个序；模型不可用/胡说时按「装没装 + 认不认这个魔数」兜底。"""
@@ -213,7 +261,14 @@ def choose(src: str, *, capability: str = "unpack", chat=None,
         except Exception as ex:                               # noqa: BLE001
             log(f"[toolbus] 模型排序失败，走兜底：{ex}")
 
-    picked = [n for n in advice if n in {t.name for t in usable}]
+    names = {t.name for t in usable}
+    hinted = preferred(src, names)
+    picked = [n for n in advice if n in names]
+    if not picked:                                            # 模型没给可用顺序
+        picked = list(hinted)
+    else:
+        # 模型给了顺序也把"魔数明显指向的那几个"提到前面 —— 证据优先于模型直觉
+        picked = [n for n in hinted if n not in picked] + picked
     for t in usable:                                          # 兜底补齐
         if t.name not in picked:
             picked.append(t.name)

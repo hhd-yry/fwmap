@@ -380,6 +380,7 @@ def main(argv: list[str] | None = None) -> int:
     ex.add_argument("--capability", default="unpack", help="工具类别（默认 unpack）")
     ex.add_argument("--no-llm", action="store_true", help="不问模型，按兜底顺序")
     ex.add_argument("--scope", help="失败了把经验记到哪个厂商名下")
+    ex.add_argument("--external", help="外部工具描述（JSON 文件），用于厂商解密脚本")
     ex.add_argument("--json", help="结果写到这个文件")
     ex.set_defaults(func=lambda a: __import__(
         "fwmap.cli_extract", fromlist=["cmd_extract"]).cmd_extract(a))
