@@ -367,6 +367,13 @@ def main(argv: list[str] | None = None) -> int:
     rt.add_argument("--json", help="把结果写到这个文件")
     rt.set_defaults(func=cmd_routes)
 
+    kn = sub.add_parser("knowledge", help="看经验库：厂商画像 / 经验卡 / 机制成功率")
+    kn.add_argument("--json", action="store_true", help="输出原始 JSON")
+    kn.add_argument("--reset", choices=["all", "vendors", "lessons", "stats"],
+                    help="清空某个库（调试用）")
+    kn.set_defaults(func=lambda a: __import__(
+        "fwmap.cli_knowledge", fromlist=["cmd_knowledge"]).cmd_knowledge(a))
+
     up = sub.add_parser("unpack", help="解包/拆壳：模型挑工具，解完用「像不像 rootfs」验收")
     up.add_argument("image", help="固件镜像（.bin/.img/.trx）")
     up.add_argument("-o", "--out", required=True, help="解到哪个目录")

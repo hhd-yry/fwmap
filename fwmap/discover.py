@@ -233,7 +233,8 @@ def _feedback(tried: list[dict]) -> str:
 
 
 def discover(binary: str, rootfs: str | None = None, *, chat=None, probe=None,
-             log=print, rounds: int = 3, use_profile: bool = True) -> dict:
+             log=print, rounds: int = 3, use_profile: bool = True,
+             use_knowledge: bool = True) -> dict:
     """完整流程：证据 → 模型选机制 → 代码抽取 → 固件验收 → 不行就换一条再来。
 
     和上一版的区别只有一点，但很关键：**选错不是终点**。
@@ -245,7 +246,26 @@ def discover(binary: str, rootfs: str | None = None, *, chat=None, probe=None,
     tried: list[dict] = []
     pack = None
 
-    if cached and cached.get("validated"):
+    # 先查「厂商经验」：同一家厂商的固件，机制往往是一样的。
+    # 命中条件：记得上次用的机制，且那次确实抽出过路由。
+    # 分两种说法：验收过的直接信；没验收过的照样用，但会再验一遍。
+    from . import knowledge as kb
+
+    vkey = kb.vendor_key(rootfs or os.path.dirname(os.path.abspath(binary)))
+    kprofile = kb.vendor_profile(vkey) if use_knowledge else {}
+    hit_knowledge = False
+    if (kprofile.get("mechanism") in MECHANISMS
+            and int(kprofile.get("routes") or 0) > 0):
+        ok_before = bool(kprofile.get("validated"))
+        plan = {"mechanism": kprofile["mechanism"],
+                "confidence": 1.0 if ok_before else 0.6,
+                "reason": (f"厂商经验命中（{vkey}，上次验收通过）" if ok_before
+                           else f"厂商经验命中（{vkey}，上次未验收，这次会再验）"),
+                "raw": ""}
+        hit_knowledge = True
+        tail = "（跳过模型）" if ok_before else "（跳过模型，但仍会验收）"
+        log(f"[discover] 命中厂商经验：{vkey} → {plan['mechanism']}{tail}")
+    elif cached and cached.get("validated"):
         plan = {"mechanism": cached["mechanism"], "confidence": 1.0,
                 "reason": f"上次在这台固件上验收通过（{cached.get('when', '')}）", "raw": ""}
         log(f"[discover] 用上次的结论：{plan['mechanism']}（跳过模型）")
@@ -324,9 +344,19 @@ def discover(binary: str, rootfs: str | None = None, *, chat=None, probe=None,
         log("[discover] 试过的机制都没通过验收 —— 这台固件可能不在目前的能力范围内，"
             "不要把「没对上」当成「没有接口」")
 
+    # 把这次的结论写回经验库：下次同厂固件直接命中，不用再问模型。
+    if final and use_knowledge:
+        kb.remember_vendor(vkey, mechanism=final["mechanism"], validated=validated,
+                           routes=len(routes), web=final.get("note", "")[:80])
+        kb.bump(final["mechanism"], vkey, validated)
+        if not validated and final["probe"] is not None:
+            kb.add_lesson(f"{vkey}：{'/'.join(t['mechanism'] for t in tried)} 都没通过路由验收，"
+                          f"需要新机制", scope=vkey, evidence=final.get("reason", ""))
+
     return {"binary": binary, "plan": final or {}, "routes": routes[:400],
             "routes_count": len(routes), "probe": (final or {}).get("probe"),
-            "validated": validated, "tried": tried, "profile": profile}
+            "validated": validated, "tried": tried, "profile": profile,
+            "vendor": vkey, "knowledge_hit": hit_knowledge}
 
 def firmware_probe(binary: str, rootfs: str | None = None, port: int = 80,
                    timeout: float = 8.0, sample: int = 3, log=print):

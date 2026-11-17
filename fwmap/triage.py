@@ -410,6 +410,17 @@ code{background:#f2f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px}
         L.append("<div class='small'>这些只是“按链猜出来的请求”，不是已验通的 PoC。"
                  "发之前先确认路径和参数名对得上。</div></div>")
 
+    # 经验库：让读者知道这一轮"是不是站在上次的肩膀上"
+    kn = res.get("knowledge") or {}
+    if kn.get("vendor"):
+        bits = [f"厂商 <b class='mono'>{e(kn['vendor'])}</b>"]
+        if kn.get("hit"):
+            bits.append(f"命中历史经验（第 {kn.get('runs', 0) + 1} 次跑这台）")
+        if kn.get("new"):
+            bits.append(f"本轮新增经验 {kn['new']} 条")
+        L.append("<div class='small' style='margin-top:6px'>经验库：" + " · ".join(bits)
+                 + f"  <span class='small'>({e(kn.get('dir', ''))})</span></div>")
+
     # 第一层
     L.append("<h2>① 该先看哪些文件（M1）</h2>")
     L.append("<table><tr><th>#</th><th>分数</th><th>角色</th><th>架构</th><th>大小</th>"
@@ -816,6 +827,43 @@ def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None
     conf = sum(1 for r in rows if r["judge"]["verdict"] == "CONFIRMED")
     unprot_total = sum((b.get("auth_summary") or {}).get("unprotected", 0)
                        for b in out["binaries"])
+
+    # 经验飞轮：把这台的结论写回知识库，下次同厂固件直接复用。
+    # 记的不只是"成功"，更重要的是"为什么失败" —— 假崩溃、参数名不对、
+    # M2 定位不到 handler，这些下次应该自动绕开。
+    try:
+        from . import knowledge as kb
+
+        vkey = kb.vendor_key(rootfs=rootfs)
+        before = kb.vendor_profile(vkey)
+        new_lessons = 0
+        kb.remember_vendor(vkey, chains=total_chains, kept=total_kept,
+                           exec=total_exec, bins=len(cands),
+                           web=(out["binaries"][0].get("m2_strategy") or "")[:40]
+                           if out["binaries"] else "")
+        for b in out["binaries"]:
+            if (b.get("dyn") or {}).get("control", {}).get("status") == "crash":
+                new_lessons += kb.add_lesson(
+                    "对照组（无害 GET /）就崩 = 环境问题，这一轮结论不能当漏洞",
+                    scope=vkey)
+            if b.get("endpoints") and not any(e.get("handler_name")
+                                              for e in (b.get("endpoint_list") or [])):
+                new_lessons += kb.add_lesson(
+                    "M2 没把 URL 对上 handler：改用网页/CGI 抽路由，别再靠猜",
+                    scope=vkey)
+            if b.get("dyn_error") or b.get("agent_error") or b.get("auth_error"):
+                new_lessons += kb.add_lesson(
+                    f"{vkey}：动态/模型/鉴权层报错过 —— 这台的环境不完整，"
+                    f"结论要打折扣", scope=vkey)
+        out["knowledge"] = {"vendor": vkey,
+                            "hit": bool(before.get("validated")),
+                            "runs": int(before.get("runs") or 0),
+                            "new": new_lessons, "dir": kb.dir_path()}
+        log(f"        经验库：厂商 {vkey} · 命中历史 {'是' if before else '否'} · "
+            f"新增经验 {new_lessons} 条")
+    except Exception as ex:                                   # noqa: BLE001
+        out["knowledge_error"] = str(ex)[:120]
+
     out["stats"] = {
         "oneline": (f"{len(cands)} 个二进制、{total_chains} 条候选链、保留 {total_kept} 条"
                     + (f"，其中 {total_known} 条对应的函数已出现在公开 CVE 里" if total_known else "")

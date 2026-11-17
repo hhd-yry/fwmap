@@ -87,7 +87,8 @@ def main() -> int:
     # 6) 探测验收：失败不能报成功
     out = discover.discover(binp, tmp, chat=fake_chat('{"mechanism":"page_derived"}'),
                             probe=lambda uris: {"checked": len(uris), "handler": 0},
-                            log=lambda *_: None, rounds=1, use_profile=False)
+                            log=lambda *_: None, rounds=1, use_profile=False,
+                            use_knowledge=False)
     ok &= check("discover 返回路由和计划", out["routes_count"] == 1 and out["plan"], out)
     ok &= check("验收失败的结论不谎报", out["validated"] is False, out["validated"])
     ok &= check("写了 profile 文件", os.path.exists(out["profile"]), out["profile"])
@@ -107,7 +108,8 @@ def main() -> int:
         return {"checked": len(uris), "handler": 0 if bad else 2}
 
     out2 = discover.discover(binp, tmp, chat=picky_chat, probe=flaky_probe,
-                             log=lambda *_: None, rounds=3, use_profile=False)
+                             log=lambda *_: None, rounds=3, use_profile=False,
+                             use_knowledge=False)
     ok &= check("回环真的试了两种机制", [t["mechanism"] for t in out2["tried"]]
                 == ["page_derived", "strings_goform"], out2["tried"])
     ok &= check("第二个机制被验收通过", out2["validated"] is True, out2["validated"])
@@ -123,7 +125,8 @@ def main() -> int:
 
     out3 = discover.discover(binp, tmp, chat=stuck_chat,
                              probe=lambda uris: {"checked": len(uris), "handler": 0},
-                             log=lambda *_: None, rounds=2, use_profile=False)
+                             log=lambda *_: None, rounds=2, use_profile=False,
+                             use_knowledge=False)
     mechs = [t["mechanism"] for t in out3["tried"]]
     ok &= check("同一条不会试两遍", len(mechs) == len(set(mechs)), mechs)
     ok &= check("第二轮回落到兜底机制", mechs[-1] != "page_derived", mechs)
@@ -143,6 +146,18 @@ def main() -> int:
     ok &= check("验收过的结论写进 profile 并被复用",
                 out4["plan"]["mechanism"] == "strings_goform", out4["plan"])
     os.environ.pop("FWMAP_PROFILE_DIR", None)
+
+    # 10) 经验飞轮：同一厂商第二次来，直接命中上次验收过的机制（不再问模型）
+    os.environ["FWMAP_KNOWLEDGE_DIR"] = os.path.join(tmp, "know")
+    discover.discover(binp, tmp, chat=fake_chat('{"mechanism":"page_derived"}'),
+                      probe=lambda uris: {"checked": len(uris), "handler": 2},
+                      log=lambda *_: None, rounds=1, use_profile=False)
+    hit = discover.discover(binp, tmp, chat=boom_chat,
+                            probe=lambda uris: {"checked": len(uris), "handler": 2},
+                            log=lambda *_: None, rounds=1, use_profile=False)
+    ok &= check("第二次命中厂商经验（没再问模型）", hit["knowledge_hit"] is True, hit)
+    ok &= check("用的就是上次的机制", hit["plan"]["mechanism"] == "page_derived", hit["plan"])
+    os.environ.pop("FWMAP_KNOWLEDGE_DIR", None)
 
     import shutil
 
