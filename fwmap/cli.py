@@ -374,6 +374,16 @@ def main(argv: list[str] | None = None) -> int:
     kn.set_defaults(func=lambda a: __import__(
         "fwmap.cli_knowledge", fromlist=["cmd_knowledge"]).cmd_knowledge(a))
 
+    ex = sub.add_parser("extract", help="用工具总线解包/拆壳（模型排顺序，验收定成败）")
+    ex.add_argument("image", help="固件镜像")
+    ex.add_argument("-o", "--out", required=True, help="解到哪个目录")
+    ex.add_argument("--capability", default="unpack", help="工具类别（默认 unpack）")
+    ex.add_argument("--no-llm", action="store_true", help="不问模型，按兜底顺序")
+    ex.add_argument("--scope", help="失败了把经验记到哪个厂商名下")
+    ex.add_argument("--json", help="结果写到这个文件")
+    ex.set_defaults(func=lambda a: __import__(
+        "fwmap.cli_extract", fromlist=["cmd_extract"]).cmd_extract(a))
+
     up = sub.add_parser("unpack", help="解包/拆壳：模型挑工具，解完用「像不像 rootfs」验收")
     up.add_argument("image", help="固件镜像（.bin/.img/.trx）")
     up.add_argument("-o", "--out", required=True, help="解到哪个目录")
