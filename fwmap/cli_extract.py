@@ -1,6 +1,7 @@
 """`fwmap extract`：用工具总线解包/拆壳（模型排顺序，验收决定成不成）。"""
 
 import json
+import os
 
 from . import toolbus
 
@@ -61,3 +62,49 @@ def cmd_extract(args) -> int:
         return 1
     print(f"\n[+] 通过验收：{res['tool']} → {res['dir']}")
     return 0
+
+
+def cmd_analyze(args) -> int:
+    """对一个二进制跑所有能用的静态分析工具，汇总成一份事实表。
+
+    这不是"串联"（分析工具之间不是替代关系），而是"并行取证"：
+    readelf 给架构/入口、rizin 给函数表、rabin2 给加固项，
+    谁的输出过不了验收，就不采信谁。
+    """
+    from . import tools_analyze
+
+    tools_analyze.register_all()
+    tools = toolbus.all_tools("analyze")
+    if args.tool:
+        tools = [t for t in tools if t.name == args.tool]
+
+    ready = [t for t in tools if t.available()]
+    print(f"analyze 类工具 {len(tools)} 个，可用 {len(ready)} 个")
+    if not ready:
+        print("[!] 这台机器一个都没装（readelf/rabin2/rizin/lief）")
+        return 2
+
+    import tempfile
+
+    # 不给 -o 就落到临时目录：绝不能在当前目录建 `lief/` 这种同名文件夹，
+    # 否则 Python 会把它当成同名包，下次 import lief 直接拿到一个空模块。
+    outroot = args.out or tempfile.mkdtemp(prefix="fwmap-analyze-")
+    facts, results = {}, []
+    for tool in ready:
+        print(f"[analyze] {tool.name} …")
+        res = toolbus.run(tool, args.binary, os.path.join(outroot, tool.name))
+        results.append({"tool": tool.name, "ok": res["ok"],
+                        "detail": res.get("detail") or res.get("error")})
+        print(f"  {'✓' if res['ok'] else '·'} {res.get('detail') or res.get('error')}")
+        if res["ok"]:
+            facts[tool.name] = res.get("detail")
+
+    if args.json:
+        with open(args.json, "w", encoding="utf-8") as fh:
+            json.dump({"binary": args.binary, "facts": facts, "results": results},
+                      fh, ensure_ascii=False, indent=1)
+        print(f"已写出：{args.json}")
+
+    ok_n = sum(1 for r in results if r["ok"])
+    print(f"\n{ok_n}/{len(results)} 个工具给出了可采信的事实")
+    return 0 if ok_n else 1

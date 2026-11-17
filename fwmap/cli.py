@@ -385,6 +385,14 @@ def main(argv: list[str] | None = None) -> int:
     ex.set_defaults(func=lambda a: __import__(
         "fwmap.cli_extract", fromlist=["cmd_extract"]).cmd_extract(a))
 
+    an = sub.add_parser("analyze", help="对一个二进制跑静态分析工具（readelf/rabin2/rizin/lief）")
+    an.add_argument("binary", help="要分析的 ELF")
+    an.add_argument("--tool", help="只跑某一个工具")
+    an.add_argument("-o", "--out", help="工具输出放哪")
+    an.add_argument("--json", help="汇总写到这个文件")
+    an.set_defaults(func=lambda a: __import__(
+        "fwmap.cli_extract", fromlist=["cmd_analyze"]).cmd_analyze(a))
+
     up = sub.add_parser("unpack", help="解包/拆壳：模型挑工具，解完用「像不像 rootfs」验收")
     up.add_argument("image", help="固件镜像（.bin/.img/.trx）")
     up.add_argument("-o", "--out", required=True, help="解到哪个目录")

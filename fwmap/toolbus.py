@@ -43,16 +43,18 @@ class Tool:
     def __init__(self, name: str, capability: str, cmd: list[str] | None, success,
                  *, accepts: str = "", failure_hint: str = "",
                  note: str = "", timeout: int = 600, needs: str | None = None,
-                 version_cmd: list[str] | None = None, python=None):
+                 version_cmd: list[str] | None = None, python=None,
+                 stdout_success=None):
         if capability not in CAPABILITIES:
             raise ValueError(f"未知能力分类：{capability}")
-        if not callable(success):
+        if not (callable(success) or callable(stdout_success)):
             raise ValueError(f"{name}: 必须提供 success 判据（不许只靠退出码）")
         self.name = name
         self.capability = capability
         self.cmd = cmd or []
         self.python = python          # 纯 Python 工具：python(src, out) -> dict
         self.success = success
+        self.stdout_success = stdout_success   # 分析类工具：产物是 stdout，不是文件
         self.accepts = accepts
         self.failure_hint = failure_hint
         self.note = note
@@ -169,9 +171,14 @@ def run(tool: Tool | str, src: str, outdir: str, *, timeout: int | None = None) 
         return {"ok": False, "tool": tool.name, "error": str(ex)[:120],
                 "provenance": {"cmd": cmd}}
 
-    # ★ 验收：不看退出码，看东西对不对
+    # ★ 验收：不看退出码，看东西对不对。
+    # 解包类看产出目录；分析类的产物是 stdout，就用 stdout_success。
     try:
-        verdict = tool.success(outdir) or {}
+        if tool.stdout_success is not None:
+            verdict = tool.stdout_success(
+                (out or b"").decode("latin-1", "replace")) or {}
+        else:
+            verdict = tool.success(outdir) or {}
     except Exception as ex:                                   # noqa: BLE001
         verdict = {"ok": False, "detail": f"验收时出错：{ex}"}
 
