@@ -47,8 +47,13 @@ def child_env(m: dict, argv: list[str]) -> dict:
     explicit = dict(m.get("env") or {})
     env.update({str(k): str(v) for k, v in explicit.items()})
     exe = os.path.basename(argv[0]).lower() if argv else ""
+    if exe.endswith(".exe"):
+        exe = exe[:-4]
+    # py.exe（Windows launcher）也算 Python —— 仓库自带的 fwmap.cmd 用的就是 `py -3`，
+    # 漏掉它会让中文输出变 \ufffd，正是注释里说踩过的那个坑。
+    is_py = exe.startswith("python") or exe == "py"
     # manifest 里自己写了编码相关变量就听它的，别覆盖人家的选择
-    if exe.startswith("python") and not ({"PYTHONUTF8", "PYTHONIOENCODING"} & set(explicit)):
+    if is_py and not ({"PYTHONUTF8", "PYTHONIOENCODING"} & set(explicit)):
         env.update(_UTF8_ENV)
     return env
 
@@ -125,6 +130,12 @@ def register_manifest(m: dict) -> str:
                 argv.append(part.format(**kwargs))
             except KeyError as e:
                 return {"ok": False, "summary": f"参数没提供：{e}"}
+            except (IndexError, AttributeError, ValueError) as e:
+                # "{}" / "{0}" / "{a.b}" 写在 manifest 里都会走到这里。
+                # 之前只捕 KeyError，坏 manifest 会一路抛穿 tools_api.call。
+                return {"ok": False,
+                        "summary": f"manifest 里的占位符写错了（{part!r}）："
+                                   f"{type(e).__name__}"}
         try:
             # 必须显式指定 utf-8：Windows 上 text=True 默认按 GBK 解码，
             # 外部工具一输出中文就 UnicodeDecodeError（还是发生在读取线程里，很难查）。

@@ -102,10 +102,15 @@ def _reassign_breaks_taint(chain: dict, text: str) -> bool:
         return False
     if "=" in text:
         rhs = text.split("=", 1)[1]
-        src = (chain.get("source_param") or "").strip()
-        # 赋值右边还带着源参数（累加、拼接、+1）—— 污染没断
-        if src and len(src) >= 2 and re.search(rf"\b{re.escape(src)}\b", rhs):
-            return False
+        # 两个名字都要认，只认一个都会漏：
+        #   - index 型源（websGetVar(a1,"x")）→ 污染变量是 via，source_param 是字段名，
+        #     反编译代码右侧不会出现它。自引用累加 `uVar3 = uVar3 + 1` 要靠 via 才认得。
+        #   - 源就是函数参数时（Edimax formUploadIE 的 param_3）→ 真正出现在代码里的
+        #     恰恰是 source_param，via 反而是个不出现的指针名。
+        for nm in ((chain.get("via") or ""), (chain.get("source_param") or "")):
+            nm = nm.strip()
+            if nm and nm != "inline" and re.search(rf"\b{re.escape(nm)}\b", rhs):
+                return False
     return True
 
 

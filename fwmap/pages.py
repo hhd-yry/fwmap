@@ -46,8 +46,13 @@ _RE_URI_ATTR = re.compile(r"""["'](/?[A-Za-z0-9_./\-]*goform/[A-Za-z0-9_.\-]+)["
 def _norm(uri: str) -> str:
     uri = uri.strip().strip('"\'')
     uri = uri.split("?", 1)[0].split("#", 1)[0]
+    # 前缀剥离不能写成 lstrip("./") —— 那是字符集剥离，"../x" 会被吃成 "/x"
+    while uri.startswith(("./", "../")):
+        uri = uri[2:] if uri.startswith("./") else uri[3:]
+    if not uri or uri in ("#", "/"):
+        return ""                      # 空 action / "#" / 裸斜杠不是路由
     if not uri.startswith("/"):
-        uri = "/" + uri.lstrip("./")
+        uri = "/" + uri
     return uri
 
 
@@ -97,6 +102,8 @@ def forms_of(text: str) -> list[dict]:
         if not uri:
             return
         u = _norm(uri)
+        if not u:                      # 归一化之后才丢弃：action="#" / action="/"
+            return
         key = (u, tuple(params))
         if key in seen:
             return
@@ -191,12 +198,19 @@ def lookup(forms: list[dict], function: str) -> dict | None:
     for f in forms:
         if last_seg(f["uri"]) == low:
             return best([x for x in forms if last_seg(x["uri"]) == low])
+    # 段为空（uri 是 "/"）或太短时，"以它开头"会命中任意函数：
+    #   last_seg("/") == ""    → low.startswith("") 恒为 True
+    #   last_seg("/a") == "a"  → 任何以 a 开头的函数都命中
+    def usable(seg: str, min_len: int = 3) -> bool:
+        return len(seg) >= min_len
+
     for f in forms:
         seg = last_seg(f["uri"])
-        if seg.startswith(low) or low.startswith(seg):
+        if usable(seg) and (seg.startswith(low) or low.startswith(seg)):
             return best([x for x in forms
-                         if last_seg(x["uri"]).startswith(low) or low.startswith(
-                             last_seg(x["uri"]))])
+                         if usable(last_seg(x["uri"]))
+                         and (last_seg(x["uri"]).startswith(low)
+                              or low.startswith(last_seg(x["uri"])))])
     for f in forms:
         if low in f["uri"].lower():
             return best([x for x in forms if low in x["uri"].lower()])

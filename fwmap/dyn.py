@@ -198,7 +198,6 @@ def _attempt(req: dict, runtime: dict, timeout: float, ready_timeout: float) -> 
     finally:
         _kill(proc)
         _kill_guest(runtime["exe"])
-        _kill_guest(runtime["exe"])
 
 
 def _port_open(port: int) -> bool:
@@ -346,9 +345,15 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
     """
     from . import poc
 
-    chains = [c for c in (chains_or_flow if isinstance(chains_or_flow, list)
-                          else (chains_or_flow.get("chains") or []))
-              if c.get("verdict", "keep") == "keep"]
+    raw_chains = [c for c in (chains_or_flow if isinstance(chains_or_flow, list)
+                             else (chains_or_flow.get("chains") or []))]
+    chains = [c for c in raw_chains if (c.get("verdict") or "keep") == "keep"]
+    _unknown = {c.get("verdict") for c in raw_chains} - {"keep", "demoted", None}
+    if _unknown:
+        # 词汇不认识时不要静默丢弃：CONFIRMED/SUPPORTED 出现在 flow 里，
+        # 原来会一条不留，报「flow 里没有可用的链」，看不出是词汇问题。
+        log(f"[!] flow 里有非 keep/demoted 的 verdict："
+            f"{sorted(map(str, _unknown))}，这些链被跳过")
     if only:
         chains = [c for c in chains if only.lower() in (c.get("function") or "").lower()]
 

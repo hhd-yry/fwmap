@@ -116,24 +116,37 @@ def channel_of(chain: dict) -> tuple[str, str]:
     程序读的是 Cookie 头。实测 D-Link 的 index.cgi 就有三条这样的链
     （Cookie / Content-Type → strcpy），不换通道等于白打。
     """
+    # source_api 是**函数名**（judge.kind_of 里 `if api == "getenv"` 就是这么用的），
+    # 键名在 source_param 里。只看 api 的话 getenv("HTTP_COOKIE") 会被错归成 form，
+    # 载荷打进 body、程序读的是头 —— 静默打不中。
     api = (chain.get("source_api") or "").lower()
     param = (chain.get("source_param") or "").strip()
-    if "cookie" in api:
+    key = param.lower()
+
+    # 1) 先从字段名认
+    if "cookie" in key:
         return "header", "Cookie"
-    if "content_type" in api:
-        return "header", "Content-Type"
-    m = re.search(r"getenv\s*\(\s*([A-Z_]+)", chain.get("guard") or "")
-    key = (m.group(1).lower() if m else "")
     if key in _HEADER_OF:
         return "header", _HEADER_OF[key]
-    if "http_" in api:
-        name = api.split("http_", 1)[1].upper().replace("_", "-")
-        return "header", name.title()
-    if "request_uri" in api or "query_string" in api:
-        return "query", param or "x"
-    for k in _HEADER_OF:
-        if k in api:
-            return "header", _HEADER_OF[k]
+    if key.startswith("http_"):
+        return "header", key[5:].replace("_", "-").title()
+
+    # 2) 字段名认不出，退回 api / 守卫代码。
+    #    守卫里的写法带引号，正则必须允许它，否则永远匹配不上。
+    if "cookie" in api:
+        return "header", "Cookie"
+    m = re.search(r"""getenv\s*\(\s*["']?([A-Za-z_]+)""", chain.get("guard") or "")
+    gkey = (m.group(1).lower() if m else "")
+    if gkey in _HEADER_OF:
+        return "header", _HEADER_OF[gkey]
+    if gkey.startswith("http_"):
+        return "header", gkey[5:].replace("_", "-").title()
+
+    # 3) 整条 query string 都是输入，参数名没有意义
+    if key in ("request_uri", "query_string") or "request_uri" in api \
+            or "query_string" in api:
+        return "query", "x"
+
     return "form", param
 
 

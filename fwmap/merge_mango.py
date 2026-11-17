@@ -33,6 +33,11 @@ _RE_PLACEHOLDER = re.compile(r"^(sub_|FUN_|loc_|j_|dword_|unk_)", re.I)
 _RE_ROUTE = re.compile(r"/[A-Za-z][A-Za-z0-9_\-]*(?:/[A-Za-z0-9_\-.]+)*")
 _RE_CVE = re.compile(r"^CVE-\d{4}-\d{4,}$", re.I)
 
+# CVE 描述里常出现文件路径（cp /etc/passwd /tmp/x），它们不是路由。
+# 只按后缀过滤会漏掉这些，报告里就会写成「路由是 /etc/passwd」。
+_FS_PREFIX = ("/etc/", "/tmp/", "/dev/", "/proc/", "/sys/", "/bin/", "/sbin/",
+              "/usr/", "/var/", "/lib/", "/opt/", "/root/")
+
 # 这些名字在任何固件里都出现，查它的命中数只说明「这词很常见」，不能当新颖性依据
 _GENERIC = {
     "system", "popen", "execve", "execl", "execv", "dosystemcmd", "dosystem",
@@ -92,6 +97,8 @@ def _routes(desc: str) -> list[str]:
     out = []
     for m in _RE_ROUTE.findall(desc or ""):
         m = m.rstrip(".,;:")
+        if m.lower().startswith(_FS_PREFIX):
+            continue
         if m.lower().endswith((".c", ".h", ".so", ".bin", ".txt", ".html", ".htm")):
             continue
         if m not in out:
