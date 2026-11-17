@@ -108,3 +108,29 @@ def cmd_analyze(args) -> int:
     ok_n = sum(1 for r in results if r["ok"])
     print(f"\n{ok_n}/{len(results)} 个工具给出了可采信的事实")
     return 0 if ok_n else 1
+
+
+def cmd_emulate(args) -> int:
+    """全系统模拟：按 profile 起 qemu-system，探端口/串口，判"到底起来没有"。"""
+    from . import tools_emulate as TE
+
+    TE.register_all()
+    prof = TE.load_profile(args.profile)
+    print(f"profile: {prof.name} · 端口 {prof.ports or '无'} · 等待 {prof.wait}s")
+
+    res = TE.run_emulation(args.image, args.out, prof)
+    print(f"结果：{'起来了' if res['booted'] else '没起来'}（{res.get('seconds')}s）")
+    for p, up in (res.get("ports") or {}).items():
+        print(f"  端口 {p}: {'✓ 通' if up else '· 不通'}")
+    if res.get("markers"):
+        print(f"  串口标记: {', '.join(res['markers'])}")
+    if not res["booted"] and res.get("serial_tail"):
+        print("  串口最后几行：")
+        for line in res["serial_tail"].strip().splitlines()[-5:]:
+            print("   ", line[:110])
+
+    if args.json:
+        with open(args.json, "w", encoding="utf-8") as fh:
+            json.dump(res, fh, ensure_ascii=False, indent=1)
+        print(f"已写出：{args.json}")
+    return 0 if res["booted"] else 1

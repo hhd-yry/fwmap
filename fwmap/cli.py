@@ -393,6 +393,14 @@ def main(argv: list[str] | None = None) -> int:
     an.set_defaults(func=lambda a: __import__(
         "fwmap.cli_extract", fromlist=["cmd_analyze"]).cmd_analyze(a))
 
+    em = sub.add_parser("emulate", help="全系统模拟：按 profile 起 qemu-system，判到底起来没有")
+    em.add_argument("image", help="固件镜像（或 rootfs 镜像）")
+    em.add_argument("-o", "--out", required=True, help="日志/结果放哪")
+    em.add_argument("--profile", required=True, help="启动 profile（JSON）")
+    em.add_argument("--json", help="结果写到这个文件")
+    em.set_defaults(func=lambda a: __import__(
+        "fwmap.cli_extract", fromlist=["cmd_emulate"]).cmd_emulate(a))
+
     up = sub.add_parser("unpack", help="解包/拆壳：模型挑工具，解完用「像不像 rootfs」验收")
     up.add_argument("image", help="固件镜像（.bin/.img/.trx）")
     up.add_argument("-o", "--out", required=True, help="解到哪个目录")
