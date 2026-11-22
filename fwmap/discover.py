@@ -234,7 +234,7 @@ def _feedback(tried: list[dict]) -> str:
 
 def discover(binary: str, rootfs: str | None = None, *, chat=None, probe=None,
              log=print, rounds: int = 3, use_profile: bool = True,
-             use_knowledge: bool = True) -> dict:
+             use_knowledge: bool = True, use_policy: bool = True) -> dict:
     """完整流程：证据 → 模型选机制 → 代码抽取 → 固件验收 → 不行就换一条再来。
 
     和上一版的区别只有一点，但很关键：**选错不是终点**。
@@ -274,6 +274,29 @@ def discover(binary: str, rootfs: str | None = None, *, chat=None, probe=None,
         log(f"[discover] 证据：{pack.get('strings')} 条字符串、"
             f"{pack.get('route_like_count')} 个路径候选、{pack.get('pages_forms', 0)} 个网页表单")
         plan = ask(pack, chat=chat)
+
+    # 经验排序（L2）：把「机制 × 厂商」的历史成功率变成顺序。
+    # 只有一条硬规则会**覆盖**模型的选择：某个机制在这家厂商上成功过，
+    # 而模型选的这条历史成功率明显更低时，按经验来（并记日志说明）。
+    policy_order: list[str] = []
+    if use_knowledge and use_policy:
+        from . import policy as _policy
+
+        stats = kb._load("stats")
+        policy_order = _policy.rank(list(MECHANISMS), vkey,
+                                    model_order=[plan["mechanism"]], stats=stats)
+        if policy_order:
+            top = policy_order[0]
+            if _policy.should_override(top, plan["mechanism"], vkey, stats=stats):
+                top_score = _policy.score(top, vkey, stats)
+                cur_score = _policy.score(plan["mechanism"], vkey, stats)
+                log(f"[discover] 按历史成功率改用 {top}"
+                    f"（{top_score:.2f} vs {cur_score:.2f}）—— 原选 {plan['mechanism']}")
+                plan = {"mechanism": top,
+                        "confidence": max(plan.get("confidence", 0.0), 0.6),
+                        "reason": f"经验优先：{top} 在这家厂商成功过",
+                        "raw": plan.get("raw", "")}
+            log("[discover] 经验排序：" + " → ".join(policy_order[:3]) + " …")
 
     best = None
     for rnd in range(max(1, rounds)):
@@ -320,10 +343,12 @@ def discover(binary: str, rootfs: str | None = None, *, chat=None, probe=None,
                   hint="上一次选的机制在这台固件上没通过验收，换一个更可能的")
         plan = ask(fb, chat=chat)
         if plan["mechanism"] in {t["mechanism"] for t in tried}:
-            plan = {"mechanism": next((m for m in FALLBACK_ORDER
+            order = policy_order or list(FALLBACK_ORDER)
+            plan = {"mechanism": next((m for m in order
                                        if m not in {t["mechanism"] for t in tried}),
                                       plan["mechanism"]),
-                    "confidence": 0.0, "reason": "模型又选了试过的，改用兜底顺序", "raw": ""}
+                    "confidence": 0.0, "reason": "模型又选了试过的，按经验顺序换一条",
+                    "raw": ""}
 
     final = best or (tried[-1] if tried else None)
     validated = bool(final and (final.get("probe") or {}).get("handler"))
@@ -345,10 +370,17 @@ def discover(binary: str, rootfs: str | None = None, *, chat=None, probe=None,
             "不要把「没对上」当成「没有接口」")
 
     # 把这次的结论写回经验库：下次同厂固件直接命中，不用再问模型。
+    #
+    # 注意：**没验收就不能记成功/失败**。之前这里直接按 validated 记，
+    # 导致"没有 qemu、根本没验"被当成"机制失败"，把 stats 污染成
+    # page_derived@p5: fail=2 —— 下次排序就会把正确机制排到最后。
     if final and use_knowledge:
         kb.remember_vendor(vkey, mechanism=final["mechanism"], validated=validated,
                            routes=len(routes), web=final.get("note", "")[:80])
-        kb.bump(final["mechanism"], vkey, validated)
+        if final.get("probe") is not None:
+            kb.bump(final["mechanism"], vkey, validated)
+        else:
+            log("[discover] 本次没有验收条件（没有 qemu），不计入机制成功率")
         if not validated and final["probe"] is not None:
             kb.add_lesson(f"{vkey}：{'/'.join(t['mechanism'] for t in tried)} 都没通过路由验收，"
                           f"需要新机制", scope=vkey, evidence=final.get("reason", ""))

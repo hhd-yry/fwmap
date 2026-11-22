@@ -182,12 +182,24 @@ def lessons_for(scope: str = "") -> list[dict]:
 # ---------------------------------------------------------------- 策略成功率
 
 def bump(mechanism: str, vendor: str, ok: bool) -> dict:
-    """记一次「用某机制在某厂商上」的结果。多臂老虎机式的先验就是从这里来的。"""
+    """记一次「用某机制在某厂商上」的结果。多臂老虎机式的先验就是从这里来的。
+
+    除了成功/失败计数，还维护两个决策要用的字段：
+    `streak_fail`（连续失败次数，成功即清零）和 `last_ok/last_fail`（时间戳）。
+    没有它们，排序只能看总成功率，分不清"偶尔失败"和"一直失败"。
+    """
     data = _load("stats")
     key = f"{mechanism}@{vendor}"
     cur = data.get(key) or {"mechanism": mechanism, "vendor": vendor,
-                            "ok": 0, "fail": 0}
-    cur["ok" if ok else "fail"] = int(cur.get("ok" if ok else "fail") or 0) + 1
+                            "ok": 0, "fail": 0, "streak_fail": 0}
+    if ok:
+        cur["ok"] = int(cur.get("ok") or 0) + 1
+        cur["streak_fail"] = 0
+        cur["last_ok"] = _now()
+    else:
+        cur["fail"] = int(cur.get("fail") or 0) + 1
+        cur["streak_fail"] = int(cur.get("streak_fail") or 0) + 1
+        cur["last_fail"] = _now()
     cur["updated_at"] = _now()
     data[key] = cur
     _save("stats", data)

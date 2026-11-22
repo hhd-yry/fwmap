@@ -364,6 +364,8 @@ def main(argv: list[str] | None = None) -> int:
     rt.add_argument("--probe", action="store_true",
                     help="把路由发过去，让固件自己验收（需要 Linux + qemu）")
     rt.add_argument("--rounds", type=int, default=3, help="最多试几种机制（默认 3）")
+    rt.add_argument("--no-policy", action="store_true",
+                    help="关闭经验驱动的机制排序（消融实验用）")
     rt.add_argument("--json", help="把结果写到这个文件")
     rt.set_defaults(func=cmd_routes)
 
@@ -513,7 +515,8 @@ def cmd_routes(args) -> int:
         if args.probe and probe is None:
             print("[!] 这台机器没有能跑该固件的 qemu —— 只能抽路由，不能验收")
         out = discover.discover(args.binary, args.rootfs, chat=chat, probe=probe,
-                                log=print, rounds=getattr(args, "rounds", 3))
+                                log=print, rounds=getattr(args, "rounds", 3),
+                                use_policy=not getattr(args, "no_policy", False))
     except Exception as ex:                                # noqa: BLE001
         print(f"[!] 发现失败：{ex}")
         return 1
