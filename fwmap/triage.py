@@ -96,6 +96,25 @@ def _m3(binary: str, limit: int, force: bool = False) -> dict:
             "decompiled": flow["decompiled"], "sink_verified": flow.get("sink_verified", 0)}
 
 
+def _agent_ready() -> str:
+    """模型能不能用？返回空串表示可用，否则返回原因。
+
+    为什么要先检查：triage 现在默认开模型（--no-llm 可关）。如果环境里没有模型，
+    不能让它默默失败或者抛异常——用户必须一眼看到"这一轮是纯规则跑的"。
+    """
+    import os as _os
+
+    if _os.environ.get("FWMAP_LLM_ENDPOINT"):
+        return ""                       # 远程 endpoint 模式，连不连得上由请求时报错
+    try:
+        from .agent.llm import find_model
+
+        path = find_model(verbose=False)
+        return "" if path else "没找到本地模型（设置 FWMAP_LLM_MODEL 或开启 serve）"
+    except Exception as ex:              # noqa: BLE001
+        return f"模型加载失败：{ex}"
+
+
 def _agent(binary: str, chains: list[dict], top: int, samples: int) -> list[dict]:
     from .agent import cli as agent_cli
     from .agent import extract as ex
@@ -660,7 +679,7 @@ def _pick_for_dyn(chains: list[dict], limit: int) -> list[dict]:
 
 
 def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None,
-           use_agent: bool = False, top_chains: int = 8, samples: int = 3,
+           use_agent: bool = True, top_chains: int = 8, samples: int = 3,
            force: bool = False, use_auth: bool = True, use_verify: bool = True,
            context: str = "", log=print,
            use_dyn: bool = False, dyn_top: int = 5, dyn_port: int = 80,
@@ -738,11 +757,16 @@ def triage(rootfs: str, outdir: str, binaries: int = 2, limit: int | None = None
             b["pages_error"] = str(ex)
 
         if use_agent:
-            log(f"        LLM 复核（前 {top_chains} 条，每条 {samples} 次采样）…")
-            try:
-                b["agent_rows"] = _agent(t.abs_path, m3["chains"], top_chains, samples)
-            except Exception as ex:                          # noqa: BLE001
-                b["agent_error"] = str(ex)
+            why = _agent_ready()
+            if why:
+                log(f"        LLM 不可用（{why}）—— 本轮降级为纯规则")
+                b["agent_error"] = f"降级：{why}"
+            else:
+                log(f"        LLM 复核（前 {top_chains} 条，每条 {samples} 次采样）…")
+                try:
+                    b["agent_rows"] = _agent(t.abs_path, m3["chains"], top_chains, samples)
+                except Exception as ex:                      # noqa: BLE001
+                    b["agent_error"] = str(ex)
 
         if use_verify:
             ctx = [c.strip().lower() for c in (context or "").split(",") if c.strip()]

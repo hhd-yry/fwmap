@@ -201,7 +201,9 @@ def main(argv: list[str] | None = None) -> int:
     tri.add_argument("-o", "--outdir", default="fwmap-out", help="输出目录（默认 fwmap-out）")
     tri.add_argument("--binaries", type=int, default=2, help="对排名前 N 个二进制跑 M2/M3（默认 2）")
     tri.add_argument("--limit", type=int, help="M3 分析函数数上限（默认按大小自适应）")
-    tri.add_argument("--agent", action="store_true", help="跑本地 LLM 复核")
+    tri.add_argument("--no-llm", action="store_true",
+                     help="关掉 LLM 复核（默认开启；模型不可用时会自动降级）")
+    tri.add_argument("--agent", action="store_true", help=argparse.SUPPRESS)
     tri.add_argument("--top-chains", type=int, default=8, help="LLM 复核多少条链（默认 8）")
     tri.add_argument("--samples", type=int, default=3, help="每条链采样几次（默认 3）")
     tri.add_argument("--force", action="store_true", help="丢弃 profile 缓存，重新归纳")
