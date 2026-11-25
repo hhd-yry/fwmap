@@ -405,6 +405,16 @@ def main(argv: list[str] | None = None) -> int:
     em.set_defaults(func=lambda a: __import__(
         "fwmap.cli_extract", fromlist=["cmd_emulate"]).cmd_emulate(a))
 
+    pl = sub.add_parser("plan", help="让模型决定下一步：观察→决策→执行→验收（agent 循环）")
+    pl.add_argument("binary", help="目标二进制")
+    pl.add_argument("--rootfs", help="固件 rootfs（没有就只能分析二进制）")
+    pl.add_argument("--arch", default="", help="架构（可选，写进状态）")
+    pl.add_argument("--max-steps", type=int, default=8, help="最多几步（默认 8）")
+    pl.add_argument("--no-llm", action="store_true", help="不用模型，走固定策略")
+    pl.add_argument("--json", help="把 trace 写到这个文件")
+    pl.set_defaults(func=lambda a: __import__(
+        "fwmap.agent.loop_cli", fromlist=["cmd_plan"]).cmd_plan(a))
+
     up = sub.add_parser("unpack", help="解包/拆壳：模型挑工具，解完用「像不像 rootfs」验收")
     up.add_argument("image", help="固件镜像（.bin/.img/.trx）")
     up.add_argument("-o", "--out", required=True, help="解到哪个目录")
