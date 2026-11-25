@@ -154,19 +154,13 @@ def _attempt(req: dict, runtime: dict, timeout: float, ready_timeout: float) -> 
     except OSError:
         pass
 
-    full_env = dict(os.environ)
-    full_env.update(runtime.get("env") or {})
     t0 = time.time()
     try:
         # start_new_session：目标如果 fork 出子进程，杀的时候要连子进程一起杀，
         # 否则它继续占着端口，后面每一条都会变成 no-listener。
-        args = [a.format(port=req["port"]) if "{port}" in a else a
-                for a in (runtime.get("args") or [])]
-        proc = subprocess.Popen(list(runtime["prefix"]) + [runtime["exe"]] + args,
-                                stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                env=full_env, cwd=runtime.get("cwd") or ".",
-                                start_new_session=True)
+        kw = _popen_kwargs(runtime, req["port"])
+        proc = subprocess.Popen(
+            list(runtime["prefix"]) + [runtime["exe"]] + kw.pop("args"), **kw)
     except Exception as e:                              # noqa: BLE001
         return {"status": "no-listener", "detail": f"起不来：{e}", "elapsed": 0}
 
@@ -222,6 +216,38 @@ def _attempt(req: dict, runtime: dict, timeout: float, ready_timeout: float) -> 
         _kill_guest(runtime["exe"])
 
 
+def _child_limits():
+    """给子进程上资源围栏。
+
+    为什么必须要有：Edimax BR-6478AC 的 Web 服务是 busybox 的 httpd 符号链接，
+    访问某些页面时它会把自己当 CGI 再执行一次 —— 结果在我们的测试机上
+    滚出过 500 多个进程、load average 500+，把虚拟机拖到无法操作。
+
+    这不是固件的问题，是"在宿主机上直接跑不可信程序"的必然风险。
+    围栏钉死后，最多 64 个进程、120 秒 CPU，炸不出宿主机。
+    """
+    try:
+        import resource
+
+        resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
+        resource.setrlimit(resource.RLIMIT_CPU, (120, 120))
+    except Exception:                                   # noqa: BLE001
+        pass
+
+
+def _popen_kwargs(runtime: dict, req_port: int) -> dict:
+    """统一的启动参数：会话、资源围栏、环境变量。"""
+    full_env = dict(os.environ)
+    full_env.update(runtime.get("env") or {})
+    args = [a.format(port=req_port) if "{port}" in a else a
+            for a in (runtime.get("args") or [])]
+    return {"args": args, "env": full_env,
+            "stdin": subprocess.DEVNULL, "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE, "cwd": runtime.get("cwd") or ".",
+            "start_new_session": True,
+            "preexec_fn": _child_limits if os.name == "posix" else None}
+
+
 class ServiceSession:
     """一次启动、多次请求。
 
@@ -255,16 +281,11 @@ class ServiceSession:
     def start(self) -> bool:
         if self.ok:
             return True
-        full_env = dict(os.environ)
-        full_env.update(self.runtime.get("env") or {})
-        args = [a.format(port=self.port) if "{port}" in a else a
-                for a in (self.runtime.get("args") or [])]
+        kw = _popen_kwargs(self.runtime, self.port)
         try:
             self.proc = subprocess.Popen(
-                list(self.runtime["prefix"]) + [self.runtime["exe"]] + args,
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, env=full_env,
-                cwd=self.runtime.get("cwd") or ".", start_new_session=True)
+                list(self.runtime["prefix"]) + [self.runtime["exe"]] + kw.pop("args"),
+                **kw)
         except Exception as e:                          # noqa: BLE001
             self.error = f"起不来：{e}"
             return False
