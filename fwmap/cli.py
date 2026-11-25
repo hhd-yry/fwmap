@@ -415,6 +415,14 @@ def main(argv: list[str] | None = None) -> int:
     pl.set_defaults(func=lambda a: __import__(
         "fwmap.agent.loop_cli", fromlist=["cmd_plan"]).cmd_plan(a))
 
+    pa = sub.add_parser("params", help="列出某个 URI 的字段（静态 + 模型补全，编造的会被丢弃）")
+    pa.add_argument("rootfs", help="固件 rootfs")
+    pa.add_argument("--uri", required=True, help="例如 /goform/formStaDrvSetup")
+    pa.add_argument("--no-llm", action="store_true", help="只用静态抽取")
+    pa.add_argument("--json", help="结果写到这个文件")
+    pa.set_defaults(func=lambda a: __import__(
+        "fwmap.agent.params_cli", fromlist=["cmd_params"]).cmd_params(a))
+
     up = sub.add_parser("unpack", help="解包/拆壳：模型挑工具，解完用「像不像 rootfs」验收")
     up.add_argument("image", help="固件镜像（.bin/.img/.trx）")
     up.add_argument("-o", "--out", required=True, help="解到哪个目录")
