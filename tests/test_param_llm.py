@@ -79,7 +79,9 @@ def main() -> int:
                            chat=chat_ok, log=lambda *_: None)
     ok &= check("找到引用该 URI 的页面", len(got["pages"]) == 1, got["pages"])
     ok &= check("合并后包含静态字段", "stadrv_ssid" in got["static"], got["static"])
-    ok &= check("合并后包含补全字段", "rootAPmac" in got["inferred"], got["inferred"])
+    ok &= check("JS 里的 rootAPmac 也进了静态", "rootAPmac" in got["static"],
+                got["static"])
+    ok &= check("模型补的字段被保留", len(got["inferred"]) >= 1, got["inferred"])
 
     # 7) 找不到页面时如实说
     none = P.params_for_uri(os.path.join(tmp, "root"), "/goform/nothing", chat=chat_ok)
