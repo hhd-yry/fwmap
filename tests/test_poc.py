@@ -106,7 +106,10 @@ def main() -> int:
 
     # 2b) --cmd：命令注入类要能执行任意命令（不是只会打 id）
     shell = poc.shell_payloads("cp /etc/passwd /tmp/pwned")
-    ok &= check("闭引号+换行载荷", shell[0] == "x'\ncp /etc/passwd /tmp/pwned\n'", shell[0])
+    ok &= check("首选载荷是闭引号形态", shell[0].startswith("x'"), shell[0])
+    ok &= check("含 $() 形态", any("$(" in f for f in shell), shell)
+    ok &= check("含换行形态", any("\n" in f for f in shell), shell)
+    ok &= check("无 hints 时保留经典形态", any(f.startswith(";") for f in shell), shell)
     rq = poc.build_requests(CHAIN, {"uri": "/g"}, port=80, cmd="id -a")
     ok &= check("--cmd 生效", "id -a" in rq[0]["value"], rq[0]["value"])
     # bof 链不该被 --cmd 影响
