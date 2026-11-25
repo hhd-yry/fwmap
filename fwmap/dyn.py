@@ -682,11 +682,33 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
                             os.remove(effect_path)
                         except OSError:
                             pass
-                    res2 = _send(_with_auth(req2, auth), timeout)
+                    # 用**新建的会话**发这一发：
+                    # 实测同一条会话里，先经历「对照组 + 三发被拒的请求」之后，
+                    # 再发完整字段的 POST 会拿到 0 字节（Boa 那侧像是把连接直接关了），
+                    # 而换一个新会话立刻就是 1523B + 命令执行。
+                    res2 = None
+                    # 先把残留的固件服务杀干净：Boa 会 fork 出子进程常驻，
+                    # 旧实例还占着 80 时，新会话"看起来启动成功"其实连的是旧实例，
+                    # 而旧实例此时已经不回应了（实测 0 字节）。
+                    try:
+                        _kill_guest(runtime.get("exe", ""))
+                        time.sleep(0.5)
+                    except Exception:                    # noqa: BLE001
+                        pass
+                    try:
+                        with ServiceSession(runtime, port=port, log=log) as _s2:
+                            if _s2.ok:
+                                res2 = _s2.request(_with_auth(req2, auth), timeout=timeout)
+                    except Exception:                    # noqa: BLE001
+                        res2 = None
+                    if res2 is None:
+                        res2 = _send(_with_auth(req2, auth), timeout)
                     if can_exec and effect_path and os.path.exists(effect_path):
                         res2["status"] = "exec-confirmed"
                         res2["effect"] = _read_effect(effect_path)
-                    log(f"      重打结果：{res2['status']}")
+                    _head = (res2.get("resp") or "").split("\r\n")[0][:40]
+                    log(f"      重打结果：{res2['status']} {res2.get('resp_len')}B "
+                        f"{_head!r}（body {len(body)}B，存在={os.path.exists(effect_path) if effect_path else 'n/a'}）")
                     rows.append({"req": req2, "result": res2, "retry": True})
             except Exception as ex:                          # noqa: BLE001
                 log(f"      [!] 错误页重打失败：{ex}")
