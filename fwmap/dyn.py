@@ -544,12 +544,35 @@ def _with_auth(req: dict, auth: str | None) -> dict:
     return out
 
 
+def one_shot_request(req: dict, runtime: dict, *, port: int = 80,
+                     timeout: float = 8.0, log=print) -> dict:
+    """一发一进程：起服务 → 发一个请求 → 杀掉。
+
+    为什么需要：实测同一条会话里连打几发之后，再发"完整字段"的请求会拿到 0 字节
+    （服务端主动关连接）。用独立进程跑，能排除"服务实例状态"这个变量。
+    代价是慢（每发 3–8 秒），所以只在对结论关键的那一发上开。
+    """
+    import time as _t
+
+    _kill_guest(runtime.get("exe", ""))
+    _t.sleep(0.3)
+    sess = ServiceSession(runtime, port=port, log=log)
+    try:
+        if not sess.start():
+            return {"status": "no-listener", "detail": sess.error,
+                    "resp": "", "resp_len": 0}
+        return sess.request(req, timeout=timeout)
+    finally:
+        sess.stop()
+        _kill_guest(runtime.get("exe", ""))
+
+
 def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int = 80,
             arch: str | None = None, cmd: str | None = None, check: str | None = None,
             only: str | None = None, max_payloads: int = 3, timeout: float = 8.0,
             dry_run: bool = False, endpoints: list[dict] | None = None,
             retry_on_error: bool = True, auth: str | None = None,
-            log=print) -> dict:
+            one_shot: bool = False, log=print) -> dict:
     """跑一轮动态验证，返回结果（不写文件）。
 
     抽成函数是为了让 `triage` 也能用 —— 用户点「完整报告」时不该只有静态结论。
@@ -597,6 +620,11 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
             log(f"    [!] 会话启动失败：{ex}")
             session = None
 
+    def _isolated(req, timeout_=None):
+        return one_shot_request(_with_auth(req, auth), runtime,
+                                port=getattr(session, "port", port),
+                                timeout=timeout_ or 8.0, log=log)
+
     def _send(req, timeout_=None):
         if session is not None:
             return session.request(req, timeout=timeout or 8.0)
@@ -637,7 +665,7 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
                 except OSError:
                     pass
             log(f"      {c.get('function')} · {r['param']}={len(r['value'])}B … ")
-            res = _send(r, timeout)
+            res = _isolated(r, timeout) if one_shot else _send(r, timeout)
             # 命令注入不一定崩，真正的证据是「命令的副作用出现了」
             if can_exec and effect_path and os.path.exists(effect_path):
                 res["status"] = "exec-confirmed"
@@ -686,7 +714,15 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
                     # 实测同一条会话里，先经历「对照组 + 三发被拒的请求」之后，
                     # 再发完整字段的 POST 会拿到 0 字节（Boa 那侧像是把连接直接关了），
                     # 而换一个新会话立刻就是 1523B + 命令执行。
-                    res2 = None
+                    # 关键：先停掉外层会话，否则"新服务"其实连的就是这个状态已坏的旧实例
+                    try:
+                        if session is not None:
+                            session.stop()
+                    except Exception:                    # noqa: BLE001
+                        pass
+                    res2 = one_shot_request(_with_auth(req2, auth), runtime,
+                                            port=getattr(session, "port", port),
+                                            timeout=timeout, log=log)
                     # 先把残留的固件服务杀干净：Boa 会 fork 出子进程常驻，
                     # 旧实例还占着 80 时，新会话"看起来启动成功"其实连的是旧实例，
                     # 而旧实例此时已经不回应了（实测 0 字节）。
@@ -706,6 +742,22 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
                     if can_exec and effect_path and os.path.exists(effect_path):
                         res2["status"] = "exec-confirmed"
                         res2["effect"] = _read_effect(effect_path)
+                    if res2.get("resp_len") == 0:
+                        # 诊断：同一份请求改用裸 socket 再发一次，看是不是我们自己的
+                        # 发送路径有问题（而不是固件/服务端）
+                        try:
+                            import socket as _sk
+
+                            raw = _render(_with_auth(req2, auth))
+                            _s = _sk.create_connection(("127.0.0.1", port), 5)
+                            _s.sendall(raw)
+                            _s.settimeout(8)
+                            _d = _s.recv(2048)
+                            _s.close()
+                            log(f"      [诊断] 裸 socket 重发 → {len(_d)}B "
+                                f"{(_d.split(chr(13).encode())[0][:24])!r}")
+                        except Exception as _ex:          # noqa: BLE001
+                            log(f"      [诊断] 裸 socket 失败：{_ex}")
                     _head = (res2.get("resp") or "").split("\r\n")[0][:40]
                     log(f"      重打结果：{res2['status']} {res2.get('resp_len')}B "
                         f"{_head!r}（body {len(body)}B，存在={os.path.exists(effect_path) if effect_path else 'n/a'}）")
