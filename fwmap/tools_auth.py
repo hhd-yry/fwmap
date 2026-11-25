@@ -80,6 +80,49 @@ def _http(port: int, method: str, path: str, body: str = "",
     return {"resp": data.decode("latin-1", "replace"), "error": ""}
 
 
+def _http_basic(port: int, path: str, user: str, pw: str,
+                timeout: float = 6.0) -> dict:
+    """HTTP Basic 认证探测（Edimax 这类固件用的就是它）。"""
+    import base64
+
+    token = base64.b64encode(f"{user}:{pw}".encode()).decode()
+    head = [f"GET {path} HTTP/1.0", "Host: 127.0.0.1",
+            f"Authorization: Basic {token}", "Connection: close", "", ""]
+    try:
+        s = socket.create_connection(("127.0.0.1", port), timeout)
+        s.sendall("\r\n".join(head).encode())
+        s.settimeout(timeout)
+        data = s.recv(4096)
+        s.close()
+    except OSError as ex:
+        return {"resp": "", "error": type(ex).__name__}
+    return {"resp": data.decode("latin-1", "replace"), "error": ""}
+
+
+def probe_basic(port: int = 80, *, path: str = "/", creds=None, log=print) -> dict:
+    """Basic 认证的默认口令探测：401 → 失败，其它状态码 → 通过。"""
+    creds = list(creds or DEFAULT_CREDS)
+    results = []
+    for user, pw in creds:
+        res = _http_basic(port, path, user, pw)
+        if res["error"]:
+            results.append({"user": user, "pass": pw, "verdict": "no-listener",
+                            "detail": res["error"]})
+            log(f"  {user}/{pw or '(空)'} → 连接失败 {res['error']}")
+            continue
+        status = (res["resp"].split("\r\n") or [""])[0]
+        ok = " 401" not in status and status.strip() != ""
+        results.append({"user": user, "pass": pw,
+                        "verdict": "success" if ok else "fail",
+                        "detail": status[:60]})
+        log(f"  {user}/{pw or '(空)'} → {'success' if ok else 'fail'}（{status[:40]}）")
+        if ok:
+            break
+    return {"port": port, "path": path, "mode": "basic", "tries": len(results),
+            "success": any(r["verdict"] == "success" for r in results),
+            "crashed": False, "results": results}
+
+
 def probe_login(port: int = 80, *, path: str = "/login.cgi",
                 user_field: str = "login_name", pass_field: str = "login_pass",
                 extra: dict | None = None, creds=None, log=print) -> dict:
@@ -155,6 +198,25 @@ def register_all() -> int:
             accepts="已启动的固件 Web 服务（本机端口）",
             note="按常见默认口令表登录；成功判据是拿到会话 Cookie 或管理页特征",
             failure_hint="口令不对、或登录接口本身崩溃"))
+        n += 1
+
+    if "default-creds-basic" not in have:
+        def _runner_basic(src: str, outdir: str) -> None:
+            port = int(os.environ.get("FWMAP_AUTH_PORT") or 80)
+            path = os.environ.get("FWMAP_AUTH_PATH") or "/"
+            res = probe_basic(port, path=path, log=print)
+            os.makedirs(outdir, exist_ok=True)
+            with open(os.path.join(outdir, "auth.json"), "w", encoding="utf-8") as fh:
+                json.dump(res, fh, ensure_ascii=False, indent=1)
+            if not res["success"]:
+                raise RuntimeError(f"Basic 默认口令不成立（{res['tries']} 次）")
+
+        toolbus.register(Tool(
+            "default-creds-basic", "auth", None, _validate_auth,
+            python=_runner_basic,
+            accepts="HTTP Basic 认证的固件（如 Edimax）",
+            note="按默认口令表试 Basic 认证：401 判失败，非 401 判成功",
+            failure_hint="口令不在表里"))
         n += 1
 
     for name, note in (("hydra", "经典 HTTP 表单爆破（需自己给表单参数与成功串）"),
