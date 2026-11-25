@@ -175,7 +175,8 @@ def _attempt(req: dict, runtime: dict, timeout: float, ready_timeout: float) -> 
                 # 进程退出了要区分两种情况：
                 #   ① 真的起不来（缺配置/没权限）→ 下面按「没监听」处理；
                 #   ② fork 成守护进程后父进程退出 → 端口已经开了，再试一轮就通
-                if proc.poll() is not None and not _port_open(req["port"]):
+                code = proc.poll()
+                if code is not None and _is_crash_code(code):
                     time.sleep(0.1)
                     break
                 time.sleep(0.1)
@@ -229,7 +230,16 @@ def _child_limits():
     try:
         import resource
 
-        resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
+        # NPROC 不能定死成 64：RLIMIT_NPROC 数的是**同一用户的全系统进程数**，
+        # 机器上本来就有几十上百个 root 进程时，子进程一 fork 就失败——
+        # Boa 这类会守护化的服务直接起不来（实测 Edimax 就是这样变成 no-listener 的）。
+        # 取「当前进程数 + 100」与 200 的较大者：既能挡住 fork 炸弹，又不误伤正常 fork。
+        try:
+            current = sum(1 for d in os.listdir("/proc") if d.isdigit())
+        except OSError:
+            current = 100
+        limit = max(200, current + 100)
+        resource.setrlimit(resource.RLIMIT_NPROC, (limit, limit))
         resource.setrlimit(resource.RLIMIT_CPU, (120, 120))
     except Exception:                                   # noqa: BLE001
         pass
@@ -281,6 +291,12 @@ class ServiceSession:
     def start(self) -> bool:
         if self.ok:
             return True
+
+        # 有些服务根本不看命令行端口（Boa 从 /etc 读配置，固定 80）。
+        # 这时按 --port 8080 等下去永远等不到 —— 先看看 80 是不是它自己开的。
+        if self.port != 80 and not _port_open(self.port) and _port_open(80):
+            self.log(f"    [!] 服务不听 --port {self.port}，它自己开在 80，改用 80")
+            self.port = 80
         kw = _popen_kwargs(self.runtime, self.port)
         try:
             self.proc = subprocess.Popen(
@@ -290,15 +306,39 @@ class ServiceSession:
             self.error = f"起不来：{e}"
             return False
 
+        # 服务可能不听命令行的端口（Boa 从配置里读，固定 80）。
+        # 所以除了请求的端口，再盯一眼 80；哪个先开就用哪个。
+        watch = [self.port]
+        args_text = " ".join(self.runtime.get("args") or [])
+        if "{port}" not in args_text and self.port != 80:
+            watch.append(80)
+
         deadline = time.time() + self.ready_timeout
         while time.time() < deadline:
-            if _port_open(self.port):
-                self.ok = True
-                return True
-            if self.proc.poll() is not None and not _port_open(self.port):
+            for cand in watch:
+                if _port_open(cand):
+                    if cand != self.port:
+                        self.log(f"    [!] 服务开在 {cand}（不听 --port {self.port}），改用 {cand}")
+                        self.port = cand
+                    self.ok = True
+                    return True
+            # 父进程退出有两种：① 起不来（异常退出）② 守护化（正常退出、子进程还在初始化）
+            # 只有 ① 才该立刻放弃；② 必须继续等到 deadline（Boa 实测要 2–3 秒）。
+            code = self.proc.poll()
+            if code is not None and _is_crash_code(code):
                 break
             time.sleep(0.1)
-        self.error = "端口没起来（缺配置 / 要 root 绑 80 / 直接退出）"
+        # 把进程自己说的话带出来：只报"端口没起来"没法排查（缺配置？端口占用？崩了？）
+        detail = ""
+        try:
+            if self.proc is not None:
+                out, err = _drain(self.proc, 1.0)
+                detail = (err or out or "").strip().splitlines()[-1:] or []
+                detail = detail[0][:120] if detail else ""
+        except Exception:                                # noqa: BLE001
+            pass
+        self.error = (f"端口 {self.port} 没起来（缺配置 / 要 root 绑 80 / 直接退出）"
+                      + (f"：{detail}" if detail else ""))
         return False
 
     def stop(self) -> None:
@@ -332,13 +372,19 @@ class ServiceSession:
         except OSError:
             sent = True                                  # 发出去之后对端没了，也算发过
 
-        # 判死活：只认异常退出；正常退出（单请求型服务）不算崩溃，下一轮自动重启
+        # 判死活：只认异常退出。
+        # 注意第三种情况：**守护化**——Boa 这类服务 fork 出子进程后父进程正常退出（0），
+        # 端口仍被子进程占着。此时不能当成"服务已退出"，否则下一次请求会重启一个
+        # 新的实例去抢端口，结果全是 no-listener（Edimax 实测）。
         crashed = False
         code = None
         if self.proc is not None and self.proc.poll() is not None:
             code = self.proc.returncode
-            crashed = _is_crash_code(code)
-            self.ok = False                              # 服务已退出，下次请求时重启
+            if _is_crash_code(code):
+                crashed = True
+                self.ok = False
+            elif not _port_open(self.port):
+                self.ok = False                          # 真的退了（单请求型），下次重启
 
         return {"status": "crash" if crashed else ("no-crash" if sent else "no-listener"),
                 "exit": code, "elapsed": round(time.time() - t0, 1),
@@ -479,11 +525,31 @@ def _read_effect(path: str) -> str:
         return ""
 
 
+def _with_auth(req: dict, auth: str | None) -> dict:
+    """给请求挂 HTTP Basic 认证头。
+
+    为什么需要：Edimax 这类固件的后台全是 Basic Auth（`/index.asp` 返回 401），
+    不带认证头打过去只会拿到登录页——"没崩"毫无意义。
+    凭据从哪来：`fwmap auth` 那套默认口令探测打出来的（如 admin:1234）。
+    """
+    if not auth or ":" not in auth:
+        return req
+    import base64
+
+    token = base64.b64encode(auth.encode()).decode()
+    out = dict(req)
+    headers = dict(req.get("headers") or {})
+    headers["Authorization"] = f"Basic {token}"
+    out["headers"] = headers
+    return out
+
+
 def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int = 80,
             arch: str | None = None, cmd: str | None = None, check: str | None = None,
             only: str | None = None, max_payloads: int = 3, timeout: float = 8.0,
             dry_run: bool = False, endpoints: list[dict] | None = None,
-            retry_on_error: bool = True, log=print) -> dict:
+            retry_on_error: bool = True, auth: str | None = None,
+            log=print) -> dict:
     """跑一轮动态验证，返回结果（不写文件）。
 
     抽成函数是为了让 `triage` 也能用 —— 用户点「完整报告」时不该只有静态结论。
@@ -518,11 +584,29 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
     label = runtime["label"] if runtime else None
 
     results, control = [], None
+    # 一次启动、多次请求：run_request 每次重启服务，端口 TIME_WAIT 会让后续 bind 失败，
+    # 结果全变成 no-listener（探针那边踩过同样的坑，这里同样处理）。
+    session = None
+    if label and not dry_run:
+        try:
+            session = ServiceSession(runtime, port=port, log=log)
+            if not session.start():
+                log(f"    [!] 服务没起来：{session.error}")
+                session = None
+        except Exception as ex:                          # noqa: BLE001
+            log(f"    [!] 会话启动失败：{ex}")
+            session = None
+
+    def _send(req, timeout_=None):
+        if session is not None:
+            return session.request(req, timeout=timeout or 8.0)
+        return run_request(req, runtime, timeout=timeout or 8.0)
+
     if label and not dry_run:
         # 先打一发绝对无害的请求做对照。固件在模拟器里经常因为缺 NVRAM / 缺 /dev
         # 而「一请求就崩」，那种崩溃不是我们打出来的漏洞，必须先排除掉。
         log("    对照组（无害 GET /）… ")
-        control = run_request(poc.control_request(port), runtime, timeout=timeout)
+        control = _send(_with_auth(poc.control_request(port), auth), timeout)
         log(f"      {control['status']}")
         if control["status"] == "crash":
             log("[!] 对照组也崩了 —— 这是环境问题（缺 NVRAM/缺设备），"
@@ -536,8 +620,9 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
         # 只有「命令注入 + 指定了 --cmd」才有「执行副作用」这个概念。
         # 别的链（比如 bof）如果也去查证据文件，会被上一轮留下的文件骗成假阳性。
         can_exec = bool(cmd) and cat in ("ci", "cmd")
-        reqs = poc.build_requests(c, ep_by_fn.get(c.get("function") or ""),
-                                  port=port, cmd=cmd)
+        reqs = [_with_auth(r, auth)
+                for r in poc.build_requests(c, ep_by_fn.get(c.get("function") or ""),
+                                            port=port, cmd=cmd)]
         rows = []
         for r in reqs[:max_payloads]:
             if dry_run or not label:
@@ -552,7 +637,7 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
                 except OSError:
                     pass
             log(f"      {c.get('function')} · {r['param']}={len(r['value'])}B … ")
-            res = run_request(r, runtime, timeout=timeout)
+            res = _send(r, timeout)
             # 命令注入不一定崩，真正的证据是「命令的副作用出现了」
             if can_exec and effect_path and os.path.exists(effect_path):
                 res["status"] = "exec-confirmed"
@@ -575,10 +660,14 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
                 plan = retry_llm.plan_retry(
                     c, first["result"].get("resp") or "", rootfs,
                     resp_len=first["result"].get("resp_len"),
-                    current_fields=cur_fields, log=log)
+                    current_fields=cur_fields,
+                    payload_value=first["req"].get("value") or "",
+                    force=True, log=log)
                 if plan:
                     log(f"      错误页 → 用页面上的 {len(plan['fields'])} 个字段重打")
-                    body = "&".join(f"{k}={v}" for k, v in plan["fields"].items())
+                    import urllib.parse as _up
+
+                    body = _up.urlencode(plan["fields"])
                     req2 = {"method": "POST", "path": plan["uri"], "host": "127.0.0.1",
                             "port": port,
                             "headers": {"Host": f"127.0.0.1:{port}",
@@ -593,7 +682,7 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
                             os.remove(effect_path)
                         except OSError:
                             pass
-                    res2 = run_request(req2, runtime, timeout=timeout)
+                    res2 = _send(_with_auth(req2, auth), timeout)
                     if can_exec and effect_path and os.path.exists(effect_path):
                         res2["status"] = "exec-confirmed"
                         res2["effect"] = _read_effect(effect_path)
@@ -609,6 +698,12 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
                     x["result"]["note"] = ("固件回的是错误页（ERR_MSG）—— 很可能参数名/字段不全，"
                                            "这一发没打到处理函数，不能当成「没漏洞」")
         results.append({"chain": c, "rows": rows})
+
+    if session is not None:
+        try:
+            session.stop()
+        except Exception:                                # noqa: BLE001
+            pass
 
     counts: dict[str, int] = {}
     for item in results:
@@ -649,7 +744,8 @@ def run(args) -> int:
                   port=args.port, arch=getattr(args, "arch", None),
                   cmd=getattr(args, "cmd", None), check=getattr(args, "check", None),
                   max_payloads=args.max_payloads, timeout=args.timeout,
-                  dry_run=args.dry_run, endpoints=endpoints)
+                  dry_run=args.dry_run, endpoints=endpoints,
+                  auth=getattr(args, "auth", None))
     arch, label, control, results = out["arch"], out["label"], out["control"], out["results"]
     print(f"[*] 目标 {os.path.basename(args.binary)} · 架构 {arch or '?'} · "
           f"运行时 {label or '无（只能生成 PoC）'}")
