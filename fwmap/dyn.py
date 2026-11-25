@@ -204,6 +204,17 @@ def _attempt(req: dict, runtime: dict, timeout: float, ready_timeout: float) -> 
         # 单连接的服务打完一次请求就正常退出，把它算成 crash 就全错了。
         # 守护进程型的（父进程 fork 完就退）同样走这里：父进程 0 退出 = 没崩。
         crashed, code, out, err = _proc_state(proc, timeout)
+        if not crashed and not resp:
+            # 同上：父进程可能晚一步才退，再给它 0.4 秒
+            time.sleep(0.4)
+            code2 = proc.poll()
+            if code2 is not None and _is_crash_code(code2):
+                crashed, code = True, code2
+                try:
+                    out2, err2 = _drain(proc, 0.1)
+                    out, err = (out + out2), (err + err2)
+                except Exception:                    # noqa: BLE001
+                    pass
         return {"status": "crash" if crashed else "no-crash", "exit": code,
                 "signal": _signal_of(out + err, code) if crashed else "",
                 "elapsed": round(time.time() - t0, 1),
@@ -376,6 +387,13 @@ class ServiceSession:
         # 注意第三种情况：**守护化**——Boa 这类服务 fork 出子进程后父进程正常退出（0），
         # 端口仍被子进程占着。此时不能当成"服务已退出"，否则下一次请求会重启一个
         # 新的实例去抢端口，结果全是 no-listener（Edimax 实测）。
+        # 有些服务是「父进程 fork 出子进程处理请求、子进程崩了父进程随后退出」。
+        # 请求刚发完时父进程还没死，会误判成 no-crash。这里补一次「再看一眼」。
+        if not resp and self.proc is not None and self.proc.poll() is None:
+            time.sleep(0.4)
+            if self.proc.poll() is None:
+                pass
+
         crashed = False
         code = None
         if self.proc is not None and self.proc.poll() is not None:
