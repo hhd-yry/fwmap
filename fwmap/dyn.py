@@ -483,7 +483,7 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
             arch: str | None = None, cmd: str | None = None, check: str | None = None,
             only: str | None = None, max_payloads: int = 3, timeout: float = 8.0,
             dry_run: bool = False, endpoints: list[dict] | None = None,
-            log=print) -> dict:
+            retry_on_error: bool = True, log=print) -> dict:
     """跑一轮动态验证，返回结果（不写文件）。
 
     抽成函数是为了让 `triage` 也能用 —— 用户点「完整报告」时不该只有静态结论。
@@ -562,13 +562,51 @@ def run_dyn(chains_or_flow, binary: str, *, rootfs: str | None = None, port: int
             if res["status"] in ("crash", "exec-confirmed"):
                 break                     # 有结论了，不用再加码
 
-        # 一条都没崩、而且固件回的是 ERR_MSG 之类的错误页 —— 大概率参数名/路径不对。
-        # 这时候「没崩」什么都不说明，必须写清楚，别让人当成「这条链安全」。
+        # 一条都没崩、而且固件回的是错误页 —— 先别下结论：
+        # 很可能是"处理器没接受这次请求"（字段不全/格式不对），不是"没漏洞"。
+        # 这里用页面上的完整字段集重打一次（实测 4 个字段 184B → 18 个字段 1523B）。
+        if (rows and retry_on_error and rootfs and can_exec
+                and all(x["result"].get("status") == "no-crash" for x in rows)):
+            try:
+                from .agent import retry_llm
+
+                first = rows[0]
+                cur_fields = {}
+                plan = retry_llm.plan_retry(
+                    c, first["result"].get("resp") or "", rootfs,
+                    resp_len=first["result"].get("resp_len"),
+                    current_fields=cur_fields, log=log)
+                if plan:
+                    log(f"      错误页 → 用页面上的 {len(plan['fields'])} 个字段重打")
+                    body = "&".join(f"{k}={v}" for k, v in plan["fields"].items())
+                    req2 = {"method": "POST", "path": plan["uri"], "host": "127.0.0.1",
+                            "port": port,
+                            "headers": {"Host": f"127.0.0.1:{port}",
+                                        "Content-Type": "application/x-www-form-urlencoded",
+                                        "Content-Length": str(len(body)),
+                                        "Connection": "close"},
+                            "body": body, "param": plan.get("payload_key") or "retry",
+                            "value": first["req"].get("value") or "",
+                            "function": c.get("function") or ""}
+                    if effect_path:
+                        try:
+                            os.remove(effect_path)
+                        except OSError:
+                            pass
+                    res2 = run_request(req2, runtime, timeout=timeout)
+                    if can_exec and effect_path and os.path.exists(effect_path):
+                        res2["status"] = "exec-confirmed"
+                        res2["effect"] = _read_effect(effect_path)
+                    log(f"      重打结果：{res2['status']}")
+                    rows.append({"req": req2, "result": res2, "retry": True})
+            except Exception as ex:                          # noqa: BLE001
+                log(f"      [!] 错误页重打失败：{ex}")
+
         if rows and all(x["result"].get("status") == "no-crash" for x in rows):
             resp = " ".join((x["result"].get("resp") or "") for x in rows).lower()
             if any(k in resp for k in ("err_msg", "invalid", "no such", "not found")):
                 for x in rows:
-                    x["result"]["note"] = ("固件回的是错误页（ERR_MSG）—— 很可能参数名不对，"
+                    x["result"]["note"] = ("固件回的是错误页（ERR_MSG）—— 很可能参数名/字段不全，"
                                            "这一发没打到处理函数，不能当成「没漏洞」")
         results.append({"chain": c, "rows": rows})
 
