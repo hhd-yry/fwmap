@@ -47,6 +47,25 @@ CRASH_HINTS = ("uncaught target signal", "Segmentation fault", "Illegal instruct
                "Bus error", "Aborted", "core dumped", "invalid memory access")
 
 
+_WWW_DIRS = ("/www", "/webs/www", "/web", "/htdocs", "/var/www")
+
+
+def _guess_server_args(rel: str, rootfs: str | None) -> list[str]:
+    """有些 Web 服务不给参数根本不会监听，于是探针一直拿到 no-listener。
+
+    最典型的是 D-Link 的 `sbin/httpd`：必须 `-h /www -p 80` 才会起。
+    这里按"二进制名 + 固件里有没有 www 目录"给一组保守的默认参数；
+    认不出来就返回空（保持原来的"裸启动"行为，不冒险）。
+    """
+    name = os.path.basename(rel).lower()
+    if name != "httpd" or not rootfs:
+        return []
+    for d in _WWW_DIRS:
+        if os.path.isdir(os.path.join(rootfs, d.lstrip("/"))):
+            return ["-h", d, "-p", "{port}"]
+    return []
+
+
 def find_runtime(arch: str, rootfs: str | None = None, binary: str = "") -> dict | None:
     """找一个能跑目标二进制的运行时，返回 {label, prefix, env, exe, cwd}；没有则 None。
 
@@ -82,7 +101,8 @@ def find_runtime(arch: str, rootfs: str | None = None, binary: str = "") -> dict
             rel = None
         if rel and not rel.startswith(".."):
             return {"label": f"chroot+{name}", "prefix": ["chroot", root], "env": {},
-                    "exe": "/" + rel.replace(os.sep, "/"), "cwd": root}
+                    "exe": "/" + rel.replace(os.sep, "/"), "cwd": root,
+                    "args": _guess_server_args("/" + rel.replace(os.sep, "/"), rootfs)}
 
     # 2) qemu -L
     for cand in (name, name + "-static", name + ".exe"):
@@ -140,7 +160,9 @@ def _attempt(req: dict, runtime: dict, timeout: float, ready_timeout: float) -> 
     try:
         # start_new_session：目标如果 fork 出子进程，杀的时候要连子进程一起杀，
         # 否则它继续占着端口，后面每一条都会变成 no-listener。
-        proc = subprocess.Popen(list(runtime["prefix"]) + [runtime["exe"]],
+        args = [a.format(port=req["port"]) if "{port}" in a else a
+                for a in (runtime.get("args") or [])]
+        proc = subprocess.Popen(list(runtime["prefix"]) + [runtime["exe"]] + args,
                                 stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 env=full_env, cwd=runtime.get("cwd") or ".",
@@ -198,6 +220,109 @@ def _attempt(req: dict, runtime: dict, timeout: float, ready_timeout: float) -> 
     finally:
         _kill(proc)
         _kill_guest(runtime["exe"])
+
+
+class ServiceSession:
+    """一次启动、多次请求。
+
+    为什么需要它：路由探测要连打 5 个地址（负对照 + 正对照 + 3 个候选）。
+    每个地址都重启一次服务，既慢（每次 3–8 秒），又容易撞端口 ——
+    上一轮的 chroot 进程还没退干净，下一轮 bind 失败，被记成 no-listener 或空响应。
+    实测 DIR-615 的 httpd 就吃这个亏：逐请求重启时 3 次里有 2 次拿到 0 字节，
+    改成一次启动后，连打 9 次全部 200。
+    """
+
+    def __init__(self, runtime: dict, port: int = 80, ready_timeout: float = 8.0,
+                 log=None):
+        self.runtime = runtime
+        self.port = port
+        self.ready_timeout = ready_timeout
+        self.log = log or (lambda *a: None)
+        self.proc = None
+        self.ok = False
+        self.error = ""
+        self.label = runtime.get("label", "?")
+
+    # -- 生命周期 ------------------------------------------------------
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop()
+        return False
+
+    def start(self) -> bool:
+        if self.ok:
+            return True
+        full_env = dict(os.environ)
+        full_env.update(self.runtime.get("env") or {})
+        args = [a.format(port=self.port) if "{port}" in a else a
+                for a in (self.runtime.get("args") or [])]
+        try:
+            self.proc = subprocess.Popen(
+                list(self.runtime["prefix"]) + [self.runtime["exe"]] + args,
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, env=full_env,
+                cwd=self.runtime.get("cwd") or ".", start_new_session=True)
+        except Exception as e:                          # noqa: BLE001
+            self.error = f"起不来：{e}"
+            return False
+
+        deadline = time.time() + self.ready_timeout
+        while time.time() < deadline:
+            if _port_open(self.port):
+                self.ok = True
+                return True
+            if self.proc.poll() is not None and not _port_open(self.port):
+                break
+            time.sleep(0.1)
+        self.error = "端口没起来（缺配置 / 要 root 绑 80 / 直接退出）"
+        return False
+
+    def stop(self) -> None:
+        if self.proc is not None:
+            _kill(self.proc)
+            _kill_guest(self.runtime.get("exe", ""))
+            self.proc = None
+        self.ok = False
+
+    # -- 请求 ----------------------------------------------------------
+    def request(self, req: dict, runtime: dict | None = None,
+                timeout: float = 8.0) -> dict:
+        """发一个请求，服务保持运行。签名与 `run_request` 兼容，可直接当探针用。"""
+        t0 = time.time()
+        if not self.ok and not self.start():
+            return {"status": "no-listener", "detail": self.error,
+                    "elapsed": round(time.time() - t0, 1)}
+
+        resp = b""
+        sent = False
+        try:
+            s = socket.create_connection(("127.0.0.1", req.get("port", self.port)),
+                                         max(3.0, timeout / 2))
+            try:
+                s.sendall(_render(req))
+                s.settimeout(timeout)
+                resp = s.recv(4096)
+            finally:
+                s.close()
+            sent = True
+        except OSError:
+            sent = True                                  # 发出去之后对端没了，也算发过
+
+        # 判死活：只认异常退出；正常退出（单请求型服务）不算崩溃，下一轮自动重启
+        crashed = False
+        code = None
+        if self.proc is not None and self.proc.poll() is not None:
+            code = self.proc.returncode
+            crashed = _is_crash_code(code)
+            self.ok = False                              # 服务已退出，下次请求时重启
+
+        return {"status": "crash" if crashed else ("no-crash" if sent else "no-listener"),
+                "exit": code, "elapsed": round(time.time() - t0, 1),
+                "resp": resp[:300].decode("latin-1", "replace"),
+                "resp_len": len(resp), "runtime": self.label}
 
 
 def _port_open(port: int) -> bool:

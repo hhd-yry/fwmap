@@ -380,7 +380,7 @@ def discover(binary: str, rootfs: str | None = None, *, chat=None, probe=None,
         if final.get("probe") is not None:
             kb.bump(final["mechanism"], vkey, validated)
         else:
-            log("[discover] 本次没有验收条件（没有 qemu），不计入机制成功率")
+            log("[discover] 本次没有拿到验收结果（服务没应答/没 qemu），不计入机制成功率")
         if not validated and final["probe"] is not None:
             kb.add_lesson(f"{vkey}：{'/'.join(t['mechanism'] for t in tried)} 都没通过路由验收，"
                           f"需要新机制", scope=vkey, evidence=final.get("reason", ""))
@@ -404,8 +404,10 @@ def firmware_probe(binary: str, rootfs: str | None = None, port: int = 80,
         return None
 
     def _probe(uris):
-        out = routes_mod.probe(list(uris)[:sample], dyn.run_request, rt,
-                               port=port, timeout=timeout, log=log)
+        # 一次启动、连打多个地址：逐请求重启既慢又容易撞端口（实测 DIR-615 会拿到空响应）
+        with dyn.ServiceSession(rt, port=port, log=log) as sess:
+            out = routes_mod.probe(list(uris)[:sample], sess.request, rt,
+                                   port=port, timeout=timeout, log=log)
         handler = sum(1 for v in out["routes"].values()
                       if v["verdict"] == routes_mod.HANDLER)
         return {"checked": len(out["routes"]), "handler": handler,

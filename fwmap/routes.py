@@ -29,7 +29,14 @@ UNKNOWN = "unknown"          # 服务没起来 / 判不出来
 
 
 def _req(path: str, port: int = 80, host: str = "127.0.0.1",
-         method: str = "POST") -> dict:
+         method: str = "GET") -> dict:
+    """构造一个探测请求。
+
+    默认用 **GET**：探测的是"这个地址在不在"。用 POST 会让一部分固件的
+    httpd 直接关掉连接（DIR-615 实测：GET /index.asp 返回 200，
+    POST 同路径返回 0 字节），于是所有候选都被判成 unknown。
+    需要 POST 的场景（有参动作）由调用方显式传 method="POST"。
+    """
     body = "x=1" if method == "POST" else ""
     return {"method": method, "path": path, "host": host, "port": port,
             "headers": {"Host": f"{host}:{port}",
