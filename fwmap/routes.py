@@ -79,7 +79,7 @@ def classify(candidate: str, negative: tuple[int, str], positive: tuple[int, str
 
 
 def probe(paths: list[str], run_request, runtime: dict, port: int = 80,
-          timeout: float = 8.0, log=None) -> dict:
+          timeout: float = 8.0, log=None, positive_path: str = "/") -> dict:
     """对一串路径做三对照探测，返回 {path: {verdict, len, mark}}。
 
     `run_request` 是 dyn.run_request（每次会起一次服务，约 8-10 秒）。
@@ -93,7 +93,11 @@ def probe(paths: list[str], run_request, runtime: dict, port: int = 80,
     # 免得两处对「服务活着」的判断标准不一致。
     from . import poc as _poc
 
-    pos_res = run_request(_poc.control_request(port), runtime, timeout=timeout)
+    # 正对照默认用 GET /；但有些固件（如 Edimax 的 busybox httpd）对 "/" 会挂住不返回，
+    # 这时可以显式指定一个能应答的静态文件作为对照。
+    pos_req = (_poc.control_request(port) if positive_path == "/"
+               else _req(positive_path, port))
+    pos_res = run_request(pos_req, runtime, timeout=timeout)
     pos = signature(pos_res.get("resp") or "", pos_res.get("resp_len"))
     log(f"[routes] 负对照 {bogus} → {neg[0]}B {neg[1]!r}；正对照 / → {pos[0]}B")
 
@@ -106,4 +110,4 @@ def probe(paths: list[str], run_request, runtime: dict, port: int = 80,
                   "status": res.get("status")}
         log(f"[routes] {p:40s} {sig[0]:5d}B -> {verdict}")
     return {"negative": {"path": bogus, "len": neg[0], "mark": neg[1]},
-            "positive": {"path": "/", "len": pos[0]}, "routes": out}
+            "positive": {"path": positive_path, "len": pos[0]}, "routes": out}

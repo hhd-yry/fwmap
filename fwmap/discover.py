@@ -391,7 +391,8 @@ def discover(binary: str, rootfs: str | None = None, *, chat=None, probe=None,
             "vendor": vkey, "knowledge_hit": hit_knowledge}
 
 def firmware_probe(binary: str, rootfs: str | None = None, port: int = 80,
-                   timeout: float = 8.0, sample: int = 3, log=print):
+                   timeout: float = 8.0, sample: int = 3, log=print,
+                   positive_path: str = "/"):
     """返回一个「能真的问固件」的探针；没有 qemu 就返回 None。
 
     为什么要用固件自己来验收：模型说这条路对，不算数；
@@ -407,7 +408,8 @@ def firmware_probe(binary: str, rootfs: str | None = None, port: int = 80,
         # 一次启动、连打多个地址：逐请求重启既慢又容易撞端口（实测 DIR-615 会拿到空响应）
         with dyn.ServiceSession(rt, port=port, log=log) as sess:
             out = routes_mod.probe(list(uris)[:sample], sess.request, rt,
-                                   port=port, timeout=timeout, log=log)
+                                   port=port, timeout=timeout, log=log,
+                                   positive_path=positive_path)
         handler = sum(1 for v in out["routes"].values()
                       if v["verdict"] == routes_mod.HANDLER)
         return {"checked": len(out["routes"]), "handler": handler,
