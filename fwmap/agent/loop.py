@@ -313,6 +313,13 @@ def _validate(act: dict) -> tuple[bool, str]:
     for key, allowed in (spec.get("args") or {}).items():
         if key in args and isinstance(allowed, list) and args[key] not in allowed:
             return False, f"{key}={args[key]} 不在允许取值里"
+    # 多余参数直接拒：模型很爱给 pages 编个 url/urls（实测连编三次），
+    # 以前这些键被静默忽略，看起来"动作成功了"，其实是蒙对的。
+    allowed_keys = set((spec.get("args") or {}).keys())
+    extra = [k for k in args if k not in allowed_keys]
+    if extra:
+        hint = ", ".join(sorted(allowed_keys)) or "这个动作不收参数"
+        return False, f"多余的参数 {', '.join(extra)}（它只认 {hint}）"
     # probe 的 uri 不在枚举里，只能自己校验：必须是绝对路径，且不能是空的
     if name == "probe" and not _probe_uris(args):
         return False, "uri 得是以 / 开头的路径（可以给数组）"

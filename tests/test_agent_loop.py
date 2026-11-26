@@ -215,6 +215,9 @@ def main() -> int:
     ok &= check("kind 必须在白名单里",
                 loop._validate({"action": "verdict",
                                 "args": {"uri": "/a", "kind": "瞎写"}})[0] is False)
+    # 模型爱给不需要参数的动作编参数（pages {'url': ...}），以前被静默忽略
+    okv_e, why_e = loop._validate({"action": "pages", "args": {"url": "/index.php"}})
+    ok &= check("多余参数被拒", okv_e is False and "多余" in why_e, why_e)
     ok &= check("证据板出现在提示里",
                 "/crashy" in loop.state_brief(st))
 
