@@ -415,6 +415,8 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--arch", default="", help="架构（可选，写进状态）")
     pl.add_argument("--max-steps", type=int, default=8, help="最多几步（默认 8）")
     pl.add_argument("--no-llm", action="store_true", help="不用模型，走固定策略")
+    pl.add_argument("--temperature", type=float, default=0.0,
+                    help="采样温度（0=贪心，可复现；>0 用来测鲁棒性）")
     pl.add_argument("--probe", action="store_true",
                     help="真把候选端点发给固件（要 Linux + qemu-user + rootfs）")
     pl.add_argument("--probe-port", type=int, default=80, help="固件服务端口（默认 80）")

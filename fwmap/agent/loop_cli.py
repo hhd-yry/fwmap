@@ -31,10 +31,12 @@ def cmd_plan(args) -> int:
     from . import loop
 
     chat = None
+    temp = float(getattr(args, "temperature", 0.0) or 0.0)
     if not args.no_llm:
         from . import llm
 
         def chat(messages, **kw):                      # noqa: E306
+            kw["temperature"] = temp        # 0=贪心（可复现），>0=采样（测鲁棒性）
             return llm.chat(messages, **kw)
 
     print(f"目标：{args.binary}")
