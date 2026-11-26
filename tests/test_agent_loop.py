@@ -254,6 +254,17 @@ def main() -> int:
                 any(t.get("mode") == "verdict" and t.get("source") == "model"
                     for t in res_v["trace"]), res_v["trace"])
 
+    # 15) 自评表：模型参与率 / 被拒原因 / 结论采纳率，都要能算出来
+    s_stat = res_v.get("stats") or {}
+    ok &= check("自评有模型参与率",
+                s_stat.get("steps") == len(res_v["trace"])
+                and 0 <= s_stat.get("model_share", -1) <= 1, s_stat)
+    ok &= check("自评统计了探测与异常",
+                s_stat.get("probed") == 1 and len(s_stat.get("anomalies") or []) == 1,
+                s_stat)
+    ok &= check("自评统计了结论采纳率",
+                s_stat.get("verdict_accepted") == 1, s_stat)
+
     import shutil
 
     shutil.rmtree(tmp, ignore_errors=True)

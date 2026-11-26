@@ -62,12 +62,28 @@ def cmd_plan(args) -> int:
             for e in f.get("evidence") or []:
                 print(f"        证据：{e}")
 
+    s = res.get("stats") or {}
+    if s:
+        print()
+        print(f"自评：{s['steps']} 步里模型做了 {s['model_steps']} 步"
+              f"（{s['model_share'] * 100:.0f}%），规则兜底 {s['fallback_steps']} 步")
+        if s.get("rejects"):
+            kinds = "、".join(f"{k} {v}" for k, v in s["reject_kinds"].items())
+            print(f"      模型被拒 {s['rejects']} 次：{kinds}")
+        print(f"      探测 {s['probed']} 条端点：handler {s['handlers']} 条，"
+              f"异常 {len(s['anomalies'])} 条")
+        if s.get("verdict_tried"):
+            print(f"      模型下结论 {s['verdict_tried']} 次，通过核验 "
+                  f"{s['verdict_accepted']} 次"
+                  f"（{s['verdict_accept_rate'] * 100:.0f}%）")
+
     if args.json:
         os.makedirs(os.path.dirname(os.path.abspath(args.json)), exist_ok=True)
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump({"trace": res["trace"], "candidates": res["candidates"],
                        "probed": res["probed"], "handlers": res["handlers"],
-                       "findings": res.get("findings") or []},
+                       "findings": res.get("findings") or [],
+                       "stats": res.get("stats") or {}},
                       fh, ensure_ascii=False, indent=1)
         print(f"trace 已写出：{args.json}")
     return 0 if res["ok"] or res["trace"] else 1

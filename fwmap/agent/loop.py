@@ -336,6 +336,9 @@ def _decide(state: dict, chat) -> dict:
     if chat is None:
         return _heuristic(state)
 
+    # 每一步先清空"上次被拒"，免得上一轮的拒绝被重复计数
+    state["last_reject"] = ""
+
     # 到了挑端点的阶段就先问窄问题：这么问 1.5B 才答得出来（见 _PROBE_PROMPT 注释）
     if _verdict_phase(state):
         act = _decide_verdict(state, chat)
@@ -512,13 +515,60 @@ def _execute(act: dict, state: dict, *, probe=None, log=print) -> dict:
     return {"ok": False, "detail": f"未知动作 {name}"}
 
 
+def _reason_kind(text: str) -> str:
+    """把退回规则的原因归个类 —— 报告里要看的是分布，不是逐条原文。"""
+    for key, label in (("多余的参数", "多余参数"), ("不在允许取值", "非法参数"),
+                       ("已经成功做过", "重复动作"), ("都试过了", "重复探测"),
+                       ("没有这个动作", "非法动作"), ("缺参数", "缺参数"),
+                       ("JSON", "输出非JSON"), ("模型调用失败", "模型不可用")):
+        if key in text:
+            return label
+    return "其它"
+
+
+def _summarize(state: dict, trace: list[dict]) -> dict:
+    """一次跑完的自评：模型到底参与了没有，参与得对不对。
+
+    没有这张表，"错误率高"只能靠感觉 —— 有了它才能说清是模型不行，
+    还是流程把模型锁死了。
+    """
+    steps = len(trace)
+    model_steps = sum(1 for t in trace if t.get("source") == "model")
+    rejects = state.get("rejects") or []
+    kinds: dict[str, int] = {}
+    for r in rejects:
+        k = _reason_kind(r)
+        kinds[k] = kinds.get(k, 0) + 1
+
+    ev = state.get("evidence") or {}
+    anomalies = [u for u, d in ev.items()
+                 if d.get("len") == 0 or d.get("verdict") == "unknown"]
+    v_try = sum(1 for t in trace if t.get("action") == "verdict")
+    v_ok = len(state.get("findings") or [])
+
+    return {
+        "steps": steps,
+        "model_steps": model_steps,
+        "fallback_steps": steps - model_steps,
+        "model_share": round(model_steps / steps, 2) if steps else 0.0,
+        "rejects": len(rejects),
+        "reject_kinds": kinds,
+        "probed": len(state.get("probed") or {}),
+        "handlers": state.get("handlers", 0),
+        "anomalies": anomalies,
+        "verdict_tried": v_try,
+        "verdict_accepted": v_ok,
+        "verdict_accept_rate": round(v_ok / v_try, 2) if v_try else 0.0,
+    }
+
+
 def run(binary: str, rootfs: str | None = None, *, chat=None, max_steps: int = 8,
         probe=None, log=print, arch: str = "") -> dict:
     """主循环。返回 {trace, ok, steps, routes, handlers, candidates, probed}。"""
     state = {"binary": binary, "rootfs": rootfs, "arch": arch,
              "routes": 0, "handlers": 0, "history": [], "budget": max_steps,
              "candidates": [], "probed": {}, "cand_meta": {}, "evidence": {},
-             "probe_ready": probe is not None,
+             "probe_ready": probe is not None, "rejects": [], "last_reject": "",
              "findings": []}
     trace = []
 
@@ -527,6 +577,8 @@ def run(binary: str, rootfs: str | None = None, *, chat=None, max_steps: int = 8
         act = _decide(state, chat)
         src = act.pop("_source", "model")
         mode = act.pop("_mode", "action")
+        if state.get("last_reject"):
+            state["rejects"].append(state["last_reject"])
         tag = "" if src == "model" else "［规则兜底］"
         log(f"[loop] 第 {i + 1} 步：{tag}{act.get('action')} {act.get('args') or ''}"
             f" —— {str(act.get('why'))[:70]}")
@@ -568,4 +620,5 @@ def run(binary: str, rootfs: str | None = None, *, chat=None, max_steps: int = 8
             "steps": len(trace), "routes": state["routes"],
             "handlers": state["handlers"], "candidates": state["candidates"],
             "probed": state["probed"], "evidence": state["evidence"],
-            "findings": state.get("findings") or [], "state": state}
+            "findings": state.get("findings") or [], "state": state,
+            "stats": _summarize(state, trace)}
