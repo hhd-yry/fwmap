@@ -68,7 +68,8 @@ def cmd_triage(args) -> int:
         print(m, file=sys.stderr, flush=True)
 
     out = triage(args.rootfs, args.outdir, binaries=args.binaries, limit=args.limit,
-                 use_agent=args.agent, top_chains=args.top_chains, samples=args.samples,
+                 use_agent=(not args.no_llm), top_chains=args.top_chains,
+                 samples=args.samples,
                  force=args.force, use_auth=not args.no_auth,
                  use_verify=not args.no_verify, context=args.context or "",
                  log=log,
