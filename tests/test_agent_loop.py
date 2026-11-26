@@ -139,6 +139,58 @@ def main() -> int:
                                 "args": {"uri": ["/a", "/b"]}})[0] is True)
     ok &= check("候选写进 state_brief",
                 "/goform/x" in loop.state_brief(res_p["state"]))
+    # 10) 谁做的决定必须可分辨：报告不能把规则的功劳算到模型头上
+    ok &= check("模型挑的动作标 source=model",
+                [t.get("source") for t in res_p["trace"]][:2] == ["model", "model"],
+                [t.get("source") for t in res_p["trace"]])
+    res_h = loop.run(binary, rootfs, chat=stubborn_chat, max_steps=2,
+                     probe=stub_probe2, log=lambda *_: None)
+    ok &= check("退回规则的步骤标 source=heuristic",
+                any(t.get("source") == "heuristic" for t in res_h["trace"]),
+                [t.get("source") for t in res_h["trace"]])
+    ok &= check("被拒原因会回灌给下一步",
+                "没有执行" in loop.state_brief(res_h["state"]),
+                loop.state_brief(res_h["state"]))
+
+    # 11) 受限决策：阶段由规则收束，**端点由模型挑**（1.5B 只答得出这一种问题）
+    seen3 = []
+
+    def stub_probe3(uris):
+        seen3.extend(uris)
+        return {"checked": len(uris), "handler": 1,
+                "routes": {u: "handler" for u in uris}, "control": {}}
+
+    def narrow_chat(messages, **kw):
+        text = messages[-1]["content"]
+        if "挑哪一条" in text:
+            return '{"uri": "/goform/x", "why": "表单入口"}'
+        return '{"action": "pages", "args": {}}'
+
+    res_n = loop.run(binary, rootfs, chat=narrow_chat, max_steps=3,
+                     probe=stub_probe3, log=lambda *_: None)
+    pick = [t for t in res_n["trace"] if t.get("mode") == "probe-select"]
+    ok &= check("进入收窄后由模型挑端点", bool(pick), res_n["trace"])
+    ok &= check("模型挑的 uri 被采用",
+                bool(pick) and pick[0]["args"].get("uri") == "/goform/x", pick)
+    ok &= check("收窄步骤标 source=model",
+                bool(pick) and pick[0].get("source") == "model", pick)
+
+    # 12) 模型编一个不在候选里的 uri → 不算数
+    def liar_chat(messages, **kw):
+        if "挑哪一条" in messages[-1]["content"]:
+            return '{"uri": "/made/up", "why": "编的"}'
+        return '{"action": "pages", "args": {}}'
+
+    seen4 = []
+
+    def stub_probe4(uris):
+        seen4.extend(uris)
+        return {"checked": len(uris), "handler": 1,
+                "routes": {u: "handler" for u in uris}, "control": {}}
+
+    loop.run(binary, rootfs, chat=liar_chat, max_steps=3, probe=stub_probe4,
+             log=lambda *_: None)
+    ok &= check("候选外的 uri 不会被发出去", "/made/up" not in seen4, seen4)
 
     import shutil
 
