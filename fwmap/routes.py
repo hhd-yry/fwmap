@@ -78,6 +78,22 @@ def classify(candidate: str, negative: tuple[int, str], positive: tuple[int, str
     return HANDLER
 
 
+def _snippet(body, limit: int = 60) -> str:
+    """取响应正文第一行，充当「模型看到过什么」的凭据（下结论时引用它）。
+
+    注意：resp 可能是 bytes 也可能是 str（ServiceSession 会解码），两种都要吃。
+    """
+    if not body:
+        return ""
+    text = body if isinstance(body, str) else body.decode("latin-1", "replace")
+    head = text.split("\r\n\r\n", 1)[-1] if "\r\n\r\n" in text else text
+    for line in head.splitlines():
+        line = " ".join(line.split())
+        if line:
+            return line[:limit]
+    return ""
+
+
 def probe(paths: list[str], run_request, runtime: dict, port: int = 80,
           timeout: float = 8.0, log=None, positive_path: str = "/") -> dict:
     """对一串路径做三对照探测，返回 {path: {verdict, len, mark}}。
@@ -107,7 +123,8 @@ def probe(paths: list[str], run_request, runtime: dict, port: int = 80,
         sig = signature(res.get("resp") or "", res.get("resp_len"))
         verdict = classify(p, neg, pos, sig)
         out[p] = {"verdict": verdict, "len": sig[0], "mark": sig[1],
-                  "status": res.get("status")}
+                  "status": res.get("status"),
+                  "snippet": _snippet(res.get("resp") or b"")}
         log(f"[routes] {p:40s} {sig[0]:5d}B -> {verdict}")
     return {"negative": {"path": bogus, "len": neg[0], "mark": neg[1]},
             "positive": {"path": positive_path, "len": pos[0]}, "routes": out}

@@ -55,12 +55,19 @@ def cmd_plan(args) -> int:
         print("端点探测结果：")
         for uri, verdict in res["probed"].items():
             print(f"  {'✓' if verdict == 'handler' else '·'} {uri:44s} {verdict}")
+    if res.get("findings"):
+        print("模型下的结论（已过规则核验）：")
+        for f in res["findings"]:
+            print(f"  [{f['kind']}] {f['uri']} —— {f['why']}")
+            for e in f.get("evidence") or []:
+                print(f"        证据：{e}")
 
     if args.json:
         os.makedirs(os.path.dirname(os.path.abspath(args.json)), exist_ok=True)
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump({"trace": res["trace"], "candidates": res["candidates"],
-                       "probed": res["probed"], "handlers": res["handlers"]},
+                       "probed": res["probed"], "handlers": res["handlers"],
+                       "findings": res.get("findings") or []},
                       fh, ensure_ascii=False, indent=1)
         print(f"trace 已写出：{args.json}")
     return 0 if res["ok"] or res["trace"] else 1

@@ -192,6 +192,65 @@ def main() -> int:
              log=lambda *_: None)
     ok &= check("候选外的 uri 不会被发出去", "/made/up" not in seen4, seen4)
 
+    # 13) 模型下结论，规则核证据 —— "模型取证、规则裁决"的落点
+    st = {"binary": binary, "rootfs": rootfs,
+          "evidence": {"/crashy": {"verdict": "unknown", "len": 0},
+                       "/ok.cgi": {"verdict": "handler", "len": 1818}}}
+    r1 = loop._execute({"action": "verdict", "args": {
+        "uri": "/crashy", "kind": "crash", "why": "没有正常响应",
+        "evidence": ["/crashy 0B unknown"]}}, st)
+    ok &= check("证据齐全时结论被接受", r1["ok"] and st.get("findings"), r1)
+
+    r2 = loop._execute({"action": "verdict", "args": {
+        "uri": "/crashy", "kind": "crash", "evidence": ["/ghost.cgi 0B"]}}, st)
+    ok &= check("编造的证据被拒", r2["ok"] is False and "编" in r2["detail"], r2)
+
+    r3 = loop._execute({"action": "verdict", "args": {
+        "uri": "/ok.cgi", "kind": "crash", "evidence": ["/ok.cgi 1818B"]}}, st)
+    ok &= check("结论与实测矛盾被拒", r3["ok"] is False and "1818" in r3["detail"], r3)
+
+    r4 = loop._execute({"action": "verdict", "args": {
+        "uri": "/never-probed", "kind": "suspicious"}}, st)
+    ok &= check("没探过就下结论被拒", r4["ok"] is False, r4)
+    ok &= check("kind 必须在白名单里",
+                loop._validate({"action": "verdict",
+                                "args": {"uri": "/a", "kind": "瞎写"}})[0] is False)
+    ok &= check("证据板出现在提示里",
+                "/crashy" in loop.state_brief(st))
+
+    # 14) 看到 0 字节就该收口：不能让模型一直探下去，verdict 要真能走到
+    def stub_probe5(uris):
+        out = {}
+        for u in uris:
+            out[u] = ({"verdict": "unknown", "len": 0, "status": None, "snippet": ""}
+                      if u == "/goform/x" else
+                      {"verdict": "handler", "len": 1818, "status": 200,
+                       "snippet": "<html>"})
+        return {"checked": len(uris), "handler": 1,
+                "routes": {k: v["verdict"] for k, v in out.items()},
+                "detail": out, "control": {}}
+
+    def conclude_chat(messages, **kw):
+        text = messages[-1]["content"]
+        if "你实测到的全部记录" in text:          # 结论题的独有标记
+            return ('{"uri": "/goform/x", "kind": "crash", '
+                    '"why": "0 字节，但同轮正对照正常", '
+                    '"evidence": ["/goform/x 0B unknown"]}')
+        if "挑哪一条" in text:
+            return '{"uri": "/goform/x", "why": "表单入口"}'
+        return '{"action": "pages", "args": {}}'
+
+    res_v = loop.run(binary, rootfs, chat=conclude_chat, max_steps=4,
+                     probe=stub_probe5, log=lambda *_: None)
+    finds = res_v.get("findings") or []
+    ok &= check("0 字节后模型能下结论", bool(finds), res_v["trace"])
+    ok &= check("结论内容正确",
+                bool(finds) and finds[0]["kind"] == "crash"
+                and finds[0]["uri"] == "/goform/x", finds)
+    ok &= check("结论标 source=model",
+                any(t.get("mode") == "verdict" and t.get("source") == "model"
+                    for t in res_v["trace"]), res_v["trace"])
+
     import shutil
 
     shutil.rmtree(tmp, ignore_errors=True)

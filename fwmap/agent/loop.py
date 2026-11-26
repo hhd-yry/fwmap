@@ -47,6 +47,13 @@ ACTIONS = {
         "args": {"uri": "<string 或 string 列表，每项以 / 开头>"},
         "required": ["uri"],
     },
+    "verdict": {
+        "desc": "根据你看到的证据下结论。引用的证据必须在你看到的清单里，编的会被拒",
+        "args": {"uri": "<string>", "kind": ["crash", "suspicious", "normal"],
+                 "why": "<一句话，说清你怎么判断的>",
+                 "evidence": "<string 列表，每条写成 'uri 长度B 裁决'>"},
+        "required": ["uri", "kind"],
+    },
     "done": {"desc": "收工（已经有结论，或继续下去没有意义）", "args": {}, "required": []},
 }
 
@@ -65,6 +72,9 @@ _PROMPT = """你在控制一个固件分析工具。每一步只能做一个动�
   （名字像表单目标的 / 带参数的 / 只有它可能是处理入口的，优先）；
 - pages 和 routes 各做一次就够，做完就该进 probe；
 - 已经「已试」过的 uri 不要再试；
+- 探到反常的东西（0 字节、5xx、明显不像静态页）就用 verdict 下结论，
+  并在 evidence 里逐条引用**你实际看到的**那几行（照抄，别改写）；
+- verdict 的 kind：crash=服务被打死了；suspicious=行为反常但没崩；normal=正常页面；
 - 如果已经有足够信息（或者再试也没用），输出 action = "done"；
 - 不要重复做过且失败的动作。
 """
@@ -109,6 +119,19 @@ def state_brief(state: dict) -> str:
             lines.append("现在该 probe 了：从上面的候选里挑一条最可能被固件"
                          "真的处理的（不是随便挑），或者 done。")
 
+    # 证据板：模型下结论时能引用的就只有这几行，写别的就是编。
+    ev = state.get("evidence") or {}
+    if ev:
+        lines.append("你看到过的证据（下 verdict 时照抄其中几行）：")
+        for uri, d in list(ev.items())[-10:]:
+            lines.append(f"  · {uri} {d.get('len')}B {d.get('verdict')}"
+                         + (f" 首行:{d['snippet']}" if d.get("snippet") else ""))
+        odd = [u for u, d in ev.items()
+               if d.get("len") == 0 or d.get("verdict") == "unknown"]
+        if odd and not state.get("findings"):
+            lines.append(f"注意：{', '.join(odd[:3])} 没有正常响应 —— "
+                         "该用 verdict 下结论了。")
+
     hist = state.get("history") or []
     if hist:
         lines.append("最近的动作：")
@@ -145,6 +168,74 @@ _PROBE_PROMPT = """固件已经抽出 {n} 条候选端点，现在要挑一条�
 
 只输出 JSON：{{"uri": "/...", "why": "一句话"}}
 """
+
+
+def _verdict_phase(state: dict) -> bool:
+    """看到反常（0 字节 / 服务没了）且还没下过结论 —— 该收了。"""
+    ev = state.get("evidence") or {}
+    if not ev or state.get("findings"):
+        return False
+    return any(d.get("len") == 0 or d.get("verdict") == "unknown"
+               for d in ev.values())
+
+
+_VERDICT_PROMPT = """固件对 {target} 返回了 **0 字节**（服务直接没了），而同一轮里别的请求都正常。
+
+你实测到的全部记录：
+{rows}
+
+请就 **{target}** 这条**下结论**，并**照抄**上面记录里的几行作为证据（不许改写，不许编）。
+- kind：crash=服务被打死了 / suspicious=行为反常但没崩 / normal=正常页面
+- 如果 0 字节其实是别的原因，就选 suspicious 并说清楚。
+
+只输出 JSON：
+{{"uri": "{first}", "kind": "crash", "why": "一句话", "evidence": ["{first} 0B unknown"]}}
+"""
+
+
+def _decide_verdict(state: dict, chat) -> dict | None:
+    """窄问题之二：给已有证据下结论。
+
+    必须就**真正反常的那条**下结论 —— 否则模型会挑个安全页面说"正常"，
+    把异常撂在那儿（实测第一次就是这么绕过去的）。
+    """
+    ev = state.get("evidence") or {}
+    odd = [u for u, d in ev.items()
+           if d.get("len") == 0 or d.get("verdict") == "unknown"]
+    if not odd:
+        return None
+    rows = []
+    for uri, d in list(ev.items())[-8:]:
+        rows.append(f"  · {uri} {d.get('len')}B {d.get('verdict')}"
+                    + (f" 首行:{d['snippet']}" if d.get("snippet") else ""))
+    prompt = _VERDICT_PROMPT.format(target=", ".join(odd[:3]), first=odd[0],
+                                    rows="\n".join(rows))
+    try:
+        reply = chat([{"role": "user", "content": prompt}], max_new_tokens=160) or ""
+    except Exception:                                          # noqa: BLE001
+        return None
+    m = re.search(r"\{.*\}", reply, re.S)
+    if not m:
+        return None
+    try:
+        obj = json.loads(m.group(0))
+    except ValueError:
+        return None
+    if obj.get("uri") not in odd:
+        return None                      # 挑了条不反常的说"正常"，不算回答
+    if obj.get("kind") not in ACTIONS["verdict"]["args"]["kind"]:
+        return None
+    ev_lines = obj.get("evidence")
+    if not isinstance(ev_lines, list):
+        ev_lines = [f"{obj['uri']} {ev[obj['uri']].get('len')}B "
+                    f"{ev[obj['uri']].get('verdict')}"]
+    state["last_reject"] = ""
+    return {"action": "verdict",
+            "args": {"uri": obj["uri"], "kind": obj["kind"],
+                     "why": str(obj.get("why") or "")[:160],
+                     "evidence": [str(x) for x in ev_lines][:6]},
+            "why": str(obj.get("why") or "")[:160],
+            "_source": "model", "_mode": "verdict"}
 
 
 def _probe_phase(state: dict) -> bool:
@@ -239,6 +330,10 @@ def _decide(state: dict, chat) -> dict:
         return _heuristic(state)
 
     # 到了挑端点的阶段就先问窄问题：这么问 1.5B 才答得出来（见 _PROBE_PROMPT 注释）
+    if _verdict_phase(state):
+        act = _decide_verdict(state, chat)
+        if act is not None:
+            return act
     if _probe_phase(state):
         act = _decide_probe(state, chat)
         if act is not None:
@@ -260,10 +355,16 @@ def _decide(state: dict, chat) -> dict:
     if not ok:
         return _heuristic(state, why=f"动作不合法（{why}）")
 
-    # 防打转：同一个动作用同样的参数已经成功做过，就不再重复
-    # （实测 1.5B 模型会连着两次选 pages，浪费预算）
-    key = (act.get("action"), json.dumps(act.get("args") or {}, sort_keys=True))
-    done = {(h.get("action"), json.dumps(h.get("args") or {}, sort_keys=True))
+    # 防打转：同一个动作用同样的参数已经成功做过，就不再重复。
+    # pages 这类不带参数的动作，换个 url/urls 也算同一个 —— 否则改个参数名就能绕过。
+    if act.get("action") == "pages":
+        key = ("pages", "{}")
+    else:
+        key = (act.get("action"),
+               json.dumps(act.get("args") or {}, sort_keys=True))
+    done = {(h.get("action") if h.get("action") != "pages" else "pages",
+             "{}" if h.get("action") == "pages"
+             else json.dumps(h.get("args") or {}, sort_keys=True))
             for h in state.get("history") or [] if h.get("ok")}
     if key in done:
         return _heuristic(state, why=f"{act.get('action')} 已经成功做过，换一个")
@@ -358,10 +459,48 @@ def _execute(act: dict, state: dict, *, probe=None, log=print) -> dict:
             return {"ok": False, "detail": f"探测失败：{ex}"}
 
         verdicts = dict(res.get("routes") or {})
+        detail_map = res.get("detail") or {}
         hits = sum(1 for u in uris if verdicts.get(u) == "handler")
         shown = ", ".join(f"{u}→{verdicts.get(u, '?')}" for u in uris[:4])
+        ev = {}
+        for u in uris:
+            d = detail_map.get(u) or {}
+            ev[u] = {"verdict": d.get("verdict") or verdicts.get(u, "?"),
+                     "len": d.get("len", -1), "status": d.get("status"),
+                     "snippet": d.get("snippet") or ""}
         return {"ok": hits > 0, "detail": shown or f"{len(uris)} 条都没应答",
-                "handlers": hits, "verdicts": verdicts}
+                "handlers": hits, "verdicts": verdicts, "evidence": ev}
+
+    if name == "verdict":
+        # 模型写结论，规则核证据：引用的必须是实测过的东西，且不能和自己测到的数字打架。
+        # 这一条是"模型取证、规则裁决"的落点 —— 模型可以判断，但不能凭空断言。
+        uri = str(args.get("uri") or "")
+        kind = args.get("kind")
+        ev_all = state.get("evidence") or {}
+        if uri not in ev_all:
+            return {"ok": False, "detail": f"{uri} 没有实测证据，不能下结论"}
+        d = ev_all[uri]
+
+        known = set(ev_all)
+        for raw in (args.get("evidence") or []):
+            text = str(raw)
+            if not any(u in text for u in known):
+                return {"ok": False,
+                        "detail": f"证据「{text[:40]}」里没有任何一条实测过的 uri，像编的"}
+        if kind == "crash" and d.get("len") != 0:
+            return {"ok": False,
+                    "detail": f"你说是 crash，但 {uri} 返回了 {d.get('len')} 字节"}
+        if kind == "normal" and d.get("verdict") != "handler":
+            return {"ok": False,
+                    "detail": f"你说是 normal，但 {uri} 的裁决是 {d.get('verdict')}"}
+
+        finding = {"uri": uri, "kind": kind,
+                   "why": str(args.get("why") or "")[:200],
+                   "evidence": [str(x) for x in (args.get("evidence") or [])][:6],
+                   "measured": d}
+        state.setdefault("findings", []).append(finding)
+        return {"ok": True, "detail": f"结论已记录：{uri} = {kind}",
+                "findings": [finding]}
 
     return {"ok": False, "detail": f"未知动作 {name}"}
 
@@ -371,7 +510,7 @@ def run(binary: str, rootfs: str | None = None, *, chat=None, max_steps: int = 8
     """主循环。返回 {trace, ok, steps, routes, handlers, candidates, probed}。"""
     state = {"binary": binary, "rootfs": rootfs, "arch": arch,
              "routes": 0, "handlers": 0, "history": [], "budget": max_steps,
-             "candidates": [], "probed": {}, "cand_meta": {},
+             "candidates": [], "probed": {}, "cand_meta": {}, "evidence": {},
              "probe_ready": probe is not None,
              "findings": []}
     trace = []
@@ -405,6 +544,7 @@ def run(binary: str, rootfs: str | None = None, *, chat=None, max_steps: int = 8
         # 探过的 uri 记下来：既用于累计命中数，也用于"别再试同一条"。
         if res.get("verdicts"):
             state["probed"].update(res["verdicts"])
+            state["evidence"].update(res.get("evidence") or {})
             state["handlers"] = sum(1 for v in state["probed"].values()
                                     if v == "handler")
         elif res.get("handlers"):
@@ -420,4 +560,5 @@ def run(binary: str, rootfs: str | None = None, *, chat=None, max_steps: int = 8
     return {"trace": trace, "ok": bool(state["handlers"] or state["routes"]),
             "steps": len(trace), "routes": state["routes"],
             "handlers": state["handlers"], "candidates": state["candidates"],
-            "probed": state["probed"], "state": state}
+            "probed": state["probed"], "evidence": state["evidence"],
+            "findings": state.get("findings") or [], "state": state}

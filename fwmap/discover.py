@@ -414,6 +414,11 @@ def firmware_probe(binary: str, rootfs: str | None = None, port: int = 80,
                       if v["verdict"] == routes_mod.HANDLER)
         return {"checked": len(out["routes"]), "handler": handler,
                 "routes": {k: v["verdict"] for k, v in out["routes"].items()},
+                # 不只是裁决，连"看到了什么"一起带回去：模型下结论时要引用它。
+                "detail": {k: {"verdict": v["verdict"], "len": v["len"],
+                               "status": v.get("status"),
+                               "snippet": v.get("snippet", "")}
+                           for k, v in out["routes"].items()},
                 "control": {"negative": out["negative"], "positive": out["positive"]}}
 
     return _probe
