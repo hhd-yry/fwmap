@@ -87,6 +87,59 @@ def main() -> int:
     r = loop._execute({"action": "probe", "args": {"uri": "/x"}}, state, probe=None)
     ok &= check("没有探针时 probe 失败", r["ok"] is False and "探针" in r["detail"], r)
 
+    # 7) **模型主导试哪条端点** —— 这是这一版的重点
+    #    模型说的 uri 必须原样送到固件前面，不能被执行层换成别的；
+    #    固件给的裁决（handler / not-found）必须回填进状态，供下一步参考。
+    sent = []
+
+    def stub_probe(uris):
+        sent.extend(uris)
+        routes = {u: ("handler" if u == "/goform/x" else "not-found") for u in uris}
+        return {"checked": len(uris),
+                "handler": sum(1 for v in routes.values() if v == "handler"),
+                "routes": routes, "control": {}}
+
+    script = ['{"action": "pages", "args": {}}',
+              '{"action": "probe", "args": {"uri": "/goform/x"}, "why": "表单的 action"}',
+              '{"action": "done", "args": {}}']
+
+    def scripted_chat(messages, **kw):
+        return script.pop(0)
+
+    res_p = loop.run(binary, rootfs, chat=scripted_chat, max_steps=3,
+                     probe=stub_probe, log=lambda *_: None)
+    ok &= check("模型挑的 uri 原样送到探针", sent == ["/goform/x"], sent)
+    ok &= check("固件裁决回填进状态", res_p["probed"].get("/goform/x") == "handler",
+                res_p["probed"])
+    ok &= check("命中被计入 handlers", res_p["handlers"] == 1, res_p["handlers"])
+    ok &= check("候选清单来自 pages", "/goform/x" in res_p["candidates"],
+                res_p["candidates"])
+
+    # 8) 探过的端点不再重复探（哪怕结果是 not-found）
+    sent2 = []
+
+    def stub_probe2(uris):
+        sent2.extend(uris)
+        return {"checked": len(uris), "handler": 0,
+                "routes": {u: "not-found" for u in uris}, "control": {}}
+
+    def stubborn_chat(messages, **kw):
+        return '{"action": "probe", "args": {"uri": "/nope"}}'
+
+    loop.run(binary, rootfs, chat=stubborn_chat, max_steps=2,
+             probe=stub_probe2, log=lambda *_: None)
+    ok &= check("同一条 not-found 不会反复探", sent2.count("/nope") == 1, sent2)
+
+    # 9) uri 参数形态：只收绝对路径，允许数组
+    ok &= check("相对路径被拒",
+                loop._validate({"action": "probe", "args": {"uri": "goform/x"}})[0] is False)
+    ok &= check("空 uri 被拒", loop._validate({"action": "probe", "args": {}})[0] is False)
+    ok &= check("数组形态通过",
+                loop._validate({"action": "probe",
+                                "args": {"uri": ["/a", "/b"]}})[0] is True)
+    ok &= check("候选写进 state_brief",
+                "/goform/x" in loop.state_brief(res_p["state"]))
+
     import shutil
 
     shutil.rmtree(tmp, ignore_errors=True)

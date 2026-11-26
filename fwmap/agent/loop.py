@@ -43,8 +43,8 @@ ACTIONS = {
         "required": ["tool"],
     },
     "probe": {
-        "desc": "把候选路由真的发给固件，问它这条路径在不在",
-        "args": {"uri": "<string>"},
+        "desc": "把候选路由真的发给固件，问它这条路径在不在（**你来挑试哪条**）",
+        "args": {"uri": "<string 或 string 列表，每项以 / 开头>"},
         "required": ["uri"],
     },
     "done": {"desc": "收工（已经有结论，或继续下去没有意义）", "args": {}, "required": []},
@@ -61,6 +61,9 @@ _PROMPT = """你在控制一个固件分析工具。每一步只能做一个动�
 规则：
 - 只输出 JSON：{{"action": "名字", "args": {{...}}, "why": "一句话"}}
 - 只能从上面的动作里选；参数必须符合取值范围；
+- 用 probe 时，**你自己挑**最值得试的那条 uri，并在 why 里说为什么是它
+  （名字像表单目标的 / 带参数的 / 只有它可能是处理入口的，优先）；
+- 已经「已试」过的 uri 不要再试；
 - 如果已经有足够信息（或者再试也没用），输出 action = "done"；
 - 不要重复做过且失败的动作。
 """
@@ -72,7 +75,24 @@ def state_brief(state: dict) -> str:
              f"（{state.get('arch') or '?'}）",
              f"rootfs: {'有' if state.get('rootfs') else '无'}",
              f"已抽路由: {state.get('routes', 0)} 条，其中能应答: {state.get('handlers', 0)} 条",
+             f"探针: {'可用（能真的发请求）' if state.get('probe_ready') else '不可用（没 qemu / 服务起不来）'}",
              f"剩余步数: {state.get('budget', 0)}"]
+
+    # 候选要让模型真看见 —— 只报「有 N 条」等于没给它挑的依据。
+    # 已经探过的标出来，免得重复花预算。
+    cands = state.get("candidates") or []
+    probed = state.get("probed") or {}
+    if cands:
+        lines.append("候选路由（probe 时从这里挑）：")
+        for i, uri in enumerate(cands[:12], 1):
+            hit = probed.get(uri)
+            tag = f" → 已试：{hit}" if hit else ""
+            lines.append(f"  {i}. {uri}{tag}")
+        if len(cands) > 12:
+            lines.append(f"  ……另有 {len(cands) - 12} 条没列出")
+    else:
+        lines.append("候选路由：还没有（先做 pages 或 routes）")
+
     hist = state.get("history") or []
     if hist:
         lines.append("最近的动作：")
@@ -92,6 +112,21 @@ def _actions_text() -> str:
     return "\n".join(out)
 
 
+def _probe_uris(args) -> list[str]:
+    """把 uri 参数规整成列表：模型可能给一个字符串，也可能给数组。"""
+    raw = (args or {}).get("uri")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for u in raw:
+        u = str(u).strip()
+        if u and u.startswith("/") and u not in out:
+            out.append(u)
+    return out
+
+
 def _validate(act: dict) -> tuple[bool, str]:
     """动作是否合法（名字在白名单、参数取值在 schema 内）。"""
     name = act.get("action")
@@ -107,6 +142,9 @@ def _validate(act: dict) -> tuple[bool, str]:
     for key, allowed in (spec.get("args") or {}).items():
         if key in args and isinstance(allowed, list) and args[key] not in allowed:
             return False, f"{key}={args[key]} 不在允许取值里"
+    # probe 的 uri 不在枚举里，只能自己校验：必须是绝对路径，且不能是空的
+    if name == "probe" and not _probe_uris(args):
+        return False, "uri 得是以 / 开头的路径（可以给数组）"
     return True, ""
 
 
@@ -137,18 +175,40 @@ def _decide(state: dict, chat) -> dict:
             for h in state.get("history") or [] if h.get("ok")}
     if key in done:
         return _heuristic(state, why=f"{act.get('action')} 已经成功做过，换一个")
+
+    # probe 特殊一点：**试过就算数**，哪怕结果是 not-found。
+    # 否则模型会反复探同一条 404，把预算烧光（实测 1.5B 特别爱这么干）。
+    if act.get("action") == "probe":
+        seen = state.get("probed") or {}
+        fresh = [u for u in _probe_uris(act.get("args")) if u not in seen]
+        if not fresh:
+            return _heuristic(state, why="这几条都试过了，换没试过的")
     return act
 
 
 def _heuristic(state: dict, why: str = "") -> dict:
-    """没有模型时的固定顺序：网页表单 → 字符串路由 → 收工。"""
+    """没有模型时的固定顺序：网页表单 → 字符串路由 → 按发现顺序逐条探 → 收工。
+
+    这个顺序就是消融实验的对照组：**不挑**，谁先被抽出来就先试谁。
+    模型那一组可以自己挑——两边差多少，就是「模型会不会挑端点」的量化答案。
+    """
     done = {h.get("action") for h in state.get("history") or []}
     if "pages" not in done:
         return {"action": "pages", "args": {}, "why": why or "先看固件自带网页"}
     if "routes" not in done:
         return {"action": "routes", "args": {"mechanism": "strings_goform"},
                 "why": why or "再从二进制里找路由字符串"}
-    return {"action": "done", "args": {}, "why": why or "没有更多可试的动作"}
+
+    # 探针不可用就别硬发：否则会一路失败到预算用光，看上去像"试过都不行"。
+    if state.get("probe_ready"):
+        seen = state.get("probed") or {}
+        for uri in state.get("candidates") or []:
+            if uri not in seen:
+                return {"action": "probe", "args": {"uri": uri},
+                        "why": why or "按发现顺序试下一条"}
+    return {"action": "done", "args": {},
+            "why": why or ("没探针，探不了" if not state.get("probe_ready")
+                           else "候选都试完了")}
 
 
 def _execute(act: dict, state: dict, *, probe=None, log=print) -> dict:
@@ -163,7 +223,8 @@ def _execute(act: dict, state: dict, *, probe=None, log=print) -> dict:
 
         forms = pages.scan(rootfs)
         return {"ok": bool(forms), "detail": f"{len(forms)} 个表单",
-                "routes": len(forms)}
+                "routes": len(forms),
+                "candidates": [f.get("uri") or "" for f in forms]}
 
     if name == "routes":
         from .. import discover
@@ -171,7 +232,8 @@ def _execute(act: dict, state: dict, *, probe=None, log=print) -> dict:
         res = discover.apply_plan(args.get("mechanism") or "page_derived", binary, rootfs)
         routes = res.get("routes") or []
         return {"ok": bool(routes), "detail": res.get("note") or f"{len(routes)} 条",
-                "routes": len(routes)}
+                "routes": len(routes),
+                "candidates": [r.get("uri") or "" for r in routes]}
 
     if name == "analyze":
         from .. import toolbus, tools_analyze
@@ -185,25 +247,29 @@ def _execute(act: dict, state: dict, *, probe=None, log=print) -> dict:
     if name == "probe":
         if probe is None:
             return {"ok": False, "detail": "没有可用的固件探针（服务起不来 / 没 qemu）"}
-        uri = args.get("uri") or ""
-        if not uri:
+        uris = _probe_uris(args)
+        if not uris:
             return {"ok": False, "detail": "没给 uri"}
         try:
-            res = probe([uri])
+            res = probe(uris)
         except Exception as ex:                                # noqa: BLE001
             return {"ok": False, "detail": f"探测失败：{ex}"}
-        hits = res.get("handler", 0)
-        return {"ok": hits > 0, "detail": f"{uri} → {'handler' if hits else 'not-found'}",
-                "handlers": hits}
+
+        verdicts = dict(res.get("routes") or {})
+        hits = sum(1 for u in uris if verdicts.get(u) == "handler")
+        shown = ", ".join(f"{u}→{verdicts.get(u, '?')}" for u in uris[:4])
+        return {"ok": hits > 0, "detail": shown or f"{len(uris)} 条都没应答",
+                "handlers": hits, "verdicts": verdicts}
 
     return {"ok": False, "detail": f"未知动作 {name}"}
 
 
 def run(binary: str, rootfs: str | None = None, *, chat=None, max_steps: int = 8,
         probe=None, log=print, arch: str = "") -> dict:
-    """主循环。返回 {trace, ok, steps, routes, handlers}。"""
+    """主循环。返回 {trace, ok, steps, routes, handlers, candidates, probed}。"""
     state = {"binary": binary, "rootfs": rootfs, "arch": arch,
              "routes": 0, "handlers": 0, "history": [], "budget": max_steps,
+             "candidates": [], "probed": {}, "probe_ready": probe is not None,
              "findings": []}
     trace = []
 
@@ -219,7 +285,21 @@ def run(binary: str, rootfs: str | None = None, *, chat=None, max_steps: int = 8
         res = _execute(act, state, probe=probe, log=log)
         if res.get("routes"):
             state["routes"] = max(state["routes"], res["routes"])
-        if res.get("handlers"):
+
+        # 候选要攒起来给下一步看：模型挑端点靠的就是这份清单。
+        for uri in res.get("candidates") or []:
+            uri = str(uri or "")
+            if uri.startswith("/") and uri not in state["candidates"]:
+                state["candidates"].append(uri)
+        if len(state["candidates"]) > 60:
+            del state["candidates"][60:]
+
+        # 探过的 uri 记下来：既用于累计命中数，也用于"别再试同一条"。
+        if res.get("verdicts"):
+            state["probed"].update(res["verdicts"])
+            state["handlers"] = sum(1 for v in state["probed"].values()
+                                    if v == "handler")
+        elif res.get("handlers"):
             state["handlers"] = max(state["handlers"], res["handlers"])
 
         rec = {"action": act.get("action"), "args": act.get("args") or {},
@@ -231,4 +311,5 @@ def run(binary: str, rootfs: str | None = None, *, chat=None, max_steps: int = 8
 
     return {"trace": trace, "ok": bool(state["handlers"] or state["routes"]),
             "steps": len(trace), "routes": state["routes"],
-            "handlers": state["handlers"], "state": state}
+            "handlers": state["handlers"], "candidates": state["candidates"],
+            "probed": state["probed"], "state": state}
