@@ -258,6 +258,14 @@ def run_ghidra(cmd: list[str], timeout: int, label: str = "") -> str:
         for _name in (f"{_user}-ghidra", "ghidra"):
             os.makedirs(os.path.join(tmp, _name), exist_ok=True)
         env["TEMP"] = env["TMP"] = tmp
+        # Ghidra 在 Windows 上把用户目录放在 %APPDATA%\ghidra\...，
+        # 不光写日志，还写 preferences 和工程索引。本机 %APPDATA% 不可写时，
+        # 它连 application.log 都建不出来（报"拒绝访问"），随后整条命令行就吊死。
+        # 这里把 APPDATA/LOCALAPPDATA 也指到可写目录，彻底避开系统目录。
+        _appdata = os.path.join(tmp, "appdata")
+        os.makedirs(os.path.join(_appdata, "ghidra"), exist_ok=True)
+        env["APPDATA"] = _appdata
+        env["LOCALAPPDATA"] = _appdata
     except Exception:
         pass
     proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
