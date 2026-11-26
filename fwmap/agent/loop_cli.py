@@ -42,12 +42,15 @@ def cmd_plan(args) -> int:
     print(f"目标：{args.binary}")
     print(f"rootfs：{args.rootfs or '（无）'}   最大步数：{args.max_steps}"
           f"   模型：{'关' if args.no_llm else '开'}"
-          f"   探针：{'开' if getattr(args, 'probe', False) else '关'}")
+          f"   温度：{temp}"
+          f"   探针：{'开' if getattr(args, 'probe', False) else '关'}"
+          f"{'   候选匿名' if getattr(args, 'anonymize', False) else ''}")
 
     probe = _make_probe(args, print)
 
     res = loop.run(args.binary, args.rootfs, chat=chat, max_steps=args.max_steps,
-                   probe=probe, arch=args.arch, log=print)
+                   probe=probe, arch=args.arch, log=print,
+                   anonymize=bool(getattr(args, "anonymize", False)))
 
     print()
     print(f"跑了 {res['steps']} 步，抽到路由 {res['routes']} 条，"

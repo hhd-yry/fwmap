@@ -238,6 +238,17 @@ def _decide_verdict(state: dict, chat) -> dict | None:
             "_source": "model", "_mode": "verdict"}
 
 
+_PROBE_PROMPT_ANON = """固件里抽出了 {n} 条候选端点，**名字和参数都被藏起来了**，只剩编号。
+
+候选：
+{cands}
+
+挑一个编号交给固件去验证。既然看不到名字，就按你的直觉挑，别编编号。
+
+只输出 JSON：{{"uri": "/slot-01", "why": "一句话"}}
+"""
+
+
 def _probe_phase(state: dict) -> bool:
     """是不是到了「该挑端点」的阶段。
 
@@ -252,18 +263,33 @@ def _probe_phase(state: dict) -> bool:
 
 
 def _decide_probe(state: dict, chat) -> dict | None:
-    """窄问题：从候选里挑一条。挑不出合法答案就返回 None，交给通用逻辑。"""
+    """窄问题：从候选里挑一条。挑不出合法答案就返回 None，交给通用逻辑。
+
+    `anonymize` 打开时把 uri 换成 /slot-01 这种编号，参数也藏起来 ——
+    这是"名字还是行为"的对照：名字藏了，模型就只能瞎挑。
+    """
     probed = state.get("probed") or {}
     left = [u for u in state.get("candidates") or [] if u not in probed]
     if not left:
         return None
     meta = state.get("cand_meta") or {}
-    rows = []
-    for i, uri in enumerate(left[:20], 1):
-        ps = meta.get(uri) or []
-        rows.append(f"{i}. {uri}" + (f"   {', '.join(ps[:6])}" if ps else "   （无参数）"))
+    anon = bool(state.get("anonymize"))
+    label_to_real: dict[str, str] = {}
 
-    prompt = _PROBE_PROMPT.format(n=len(left), cands="\n".join(rows))
+    rows = []
+    if anon:
+        for i, uri in enumerate(left[:20], 1):
+            label = f"/slot-{i:02d}"
+            label_to_real[label] = uri
+            rows.append(f"{i}. {label}")
+        prompt = _PROBE_PROMPT_ANON.format(n=len(left), cands="\n".join(rows))
+    else:
+        for i, uri in enumerate(left[:20], 1):
+            ps = meta.get(uri) or []
+            rows.append(f"{i}. {uri}"
+                        + (f"   {', '.join(ps[:6])}" if ps else "   （无参数）"))
+        prompt = _PROBE_PROMPT.format(n=len(left), cands="\n".join(rows))
+
     try:
         reply = chat([{"role": "user", "content": prompt}], max_new_tokens=120) or ""
     except Exception:                                          # noqa: BLE001
@@ -275,11 +301,15 @@ def _decide_probe(state: dict, chat) -> dict | None:
         obj = json.loads(m.group(0))
     except ValueError:
         return None
-    uri = obj.get("uri")
-    if not isinstance(uri, str) or uri not in left:
+    picked = obj.get("uri")
+    if anon:
+        picked = label_to_real.get(picked)
+        if not picked:
+            return None                  # 编了个不存在的编号，不算数
+    elif not isinstance(picked, str) or picked not in left:
         return None                      # 编了个不在候选里的 uri，不算数
     state["last_reject"] = ""
-    return {"action": "probe", "args": {"uri": uri}, "why": obj.get("why", ""),
+    return {"action": "probe", "args": {"uri": picked}, "why": obj.get("why", ""),
             "_source": "model", "_mode": "probe-select"}
 
 
@@ -563,12 +593,13 @@ def _summarize(state: dict, trace: list[dict]) -> dict:
 
 
 def run(binary: str, rootfs: str | None = None, *, chat=None, max_steps: int = 8,
-        probe=None, log=print, arch: str = "") -> dict:
+        probe=None, log=print, arch: str = "", anonymize: bool = False) -> dict:
     """主循环。返回 {trace, ok, steps, routes, handlers, candidates, probed}。"""
     state = {"binary": binary, "rootfs": rootfs, "arch": arch,
              "routes": 0, "handlers": 0, "history": [], "budget": max_steps,
              "candidates": [], "probed": {}, "cand_meta": {}, "evidence": {},
              "probe_ready": probe is not None, "rejects": [], "last_reject": "",
+             "anonymize": anonymize,
              "findings": []}
     trace = []
 
