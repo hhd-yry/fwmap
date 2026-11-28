@@ -54,9 +54,10 @@ def _check_resume(out_dir: str, suite_digest: str, profile: dict) -> None:
 
 def _run_one(case: Case, fixtures_dir: str, profile: dict, out_dir: str,
              seed: int, repeat: int) -> dict:
+    # 用例自己的预算优先：它是这一题的具体约束，profile 只是全局默认
     limits = dict(DEFAULT_LIMITS)
-    limits.update(case.limits or {})
     limits.update(profile.get("limits") or {})
+    limits.update(case.limits or {})
 
     records = load_fixture(fixtures_dir, case.fixture_ref)
     backend = _make_backend(records, seed)
@@ -178,9 +179,10 @@ def _chat_for(profile: dict):
 def _run_interactive_subject(case: Case, fixtures_dir: str, subject,
                              profile: dict, out_dir: str) -> dict:
     """C 层：由被测工具自己的决策循环跑一遍，事件原样落盘。"""
+    # 用例自己的预算优先：它是这一题的具体约束，profile 只是全局默认
     limits = dict(DEFAULT_LIMITS)
-    limits.update(case.limits or {})
     limits.update(profile.get("limits") or {})
+    limits.update(case.limits or {})
     if profile.get("submit"):
         limits["submit"] = profile["submit"]      # 让模型自己提交结论
     records = load_fixture(fixtures_dir, case.fixture_ref)

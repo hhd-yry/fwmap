@@ -1,0 +1,10 @@
+{
+ "name": "rule",
+ "policy": "rule",
+ "repeats": 3,
+ "limits": {
+  "decisions": 6,
+  "tool_calls": 4
+ },
+ "note": "H ×3：确定性检查"
+}

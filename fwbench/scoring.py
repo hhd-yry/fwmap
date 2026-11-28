@@ -154,7 +154,17 @@ def score_run(run_dir: str, oracle: dict[str, dict]) -> dict:
         if not row:
             print(f"[!] 金标里没有 {cid}，跳过（不替它编）")
             continue
-        results.append(score_case(os.path.join(cases_dir, cid), row))
+        path = os.path.join(cases_dir, cid)
+        # 重复跑时每次一个子目录（r1/r2/...），逐轮评分；单轮仍是平铺结构
+        rounds = [d for d in sorted(os.listdir(path))
+                  if d.startswith("r") and d[1:].isdigit()] if os.path.isdir(path) else []
+        if rounds:
+            for rd in rounds:
+                r = score_case(os.path.join(path, rd), row)
+                r["repeat"] = int(rd[1:])
+                results.append(r)
+        else:
+            results.append(score_case(path, row))
 
     total = len(results)
     applicable = [r for r in results if r.get("applicable", True)]
@@ -167,7 +177,7 @@ def score_run(run_dir: str, oracle: dict[str, dict]) -> dict:
     for r in applicable:
         if not r.get("pair_id"):
             continue
-        pairs.setdefault(r["pair_id"], []).append(r)
+        pairs.setdefault((r["pair_id"], r.get("repeat", 0)), []).append(r)
     pair_both = sum(1 for rs in pairs.values()
                     if len(rs) == 2 and all(x["passed"] for x in rs))
 

@@ -109,6 +109,21 @@
    "sample_time": "10:01:00",
    "allow_abstain": false,
    "provisional": true
+  },
+  {
+   "case_id": "c081",
+   "family": "lowread",
+   "pair_id": "p36",
+   "expected": "exited",
+   "acceptable_evidence_sets": [
+    [
+     "e2"
+    ]
+   ],
+   "subject": "svc-17",
+   "sample_time": "10:00:10",
+   "allow_abstain": false,
+   "provisional": true
   }
  ]
 }

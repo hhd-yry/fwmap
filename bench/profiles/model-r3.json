@@ -1,0 +1,13 @@
+{
+ "name": "model",
+ "policy": "model",
+ "chat": "local",
+ "temperature": 0.0,
+ "submit": "model",
+ "repeats": 3,
+ "limits": {
+  "decisions": 6,
+  "tool_calls": 4
+ },
+ "note": "M ×3：看同一用例的稳定性"
+}
