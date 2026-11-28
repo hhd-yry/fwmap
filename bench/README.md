@@ -82,6 +82,29 @@ runs/smoke-rule/
 失败原因只记第一处能解释失败的地方。指标见 `report.md`：
 通过率、双例通过率、无依据的确定结论率。
 
+## 接入其他被测工具（`--subject`）
+
+内核不认识 fwmap：所有工具差异都在 `fwbench/subjects/` 里。
+
+| subject | 依赖 | 能力 | 说明 |
+|---|---|---|---|
+| `fwmap` | 本仓库 | `elf-meta` | 调 `fwmap.elf.read_elf` |
+| `stdlib` | 无 | `elf-meta` | 纯标准库参考实现，用来证明内核可独立运行 |
+| `elftools` | pyelftools | `elf-meta` | 未安装时记 `not_run`，**不计入通过率分母** |
+
+```bash
+# 同一批用例、同一份金标，换工具跑
+python -m fwbench run --suite bench/suites/elfmeta.json --subject fwmap \
+    --profile bench/profiles/rule.json --out runs/elf-fwmap
+python -m fwbench run --suite bench/suites/elfmeta.json --subject stdlib \
+    --profile bench/profiles/rule.json --out runs/elf-stdlib
+python -m fwbench report runs/elf-stdlib --oracle bench/oracle/elfmeta.json
+python -m fwbench compare runs/elf-fwmap runs/elf-stdlib \
+    --oracle bench/oracle/elfmeta.json --out runs/elf-cmp
+```
+
+`elfmeta` 三例：大端 MIPS/exec、小端 ARM/dyn、截断 30 字节（应报 `truncated`）。
+
 ## 增加用例
 
 1. 在 `bench/fixtures/<ref>/` 放记录 JSON，形如
@@ -93,7 +116,7 @@ runs/smoke-rule/
 
 ## 当前覆盖边界（别当成结论）
 
-- 实测的是 `rule` 与 `scripted` 两个策略 —— **都不是 fwmap 的生产决策入口**。
+- **C 层**实测的是 `rule` 与 `scripted` 两个策略 —— **都不是 fwmap 的生产决策入口**。
   要接 `fwmap/agent/loop.py` 需按计划实现 `run_subject` 适配器，
   未接通前结果应标 `harness-only`。
 - 未接入真实模型（`M` 组）、未做基线 `H`、未做信息消融。

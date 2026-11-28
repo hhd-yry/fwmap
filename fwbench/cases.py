@@ -1,4 +1,4 @@
-﻿"""用例装载、校验与公开视图。
+"""用例装载、校验与公开视图。
 
 三条硬规矩（都会让实验失效，所以代码里直接强校验）：
 
@@ -34,9 +34,18 @@ class Case:
     catalog: list[dict]
     fixture_ref: str
     limits: dict = field(default_factory=dict)
+    kind: str = "interactive"          # interactive | lookup
+    checks: list[str] = field(default_factory=list)
+
+    @property
+    def is_lookup(self) -> bool:
+        return self.kind == "lookup"
 
     def public(self) -> dict:
         """给被测系统看的视图 —— 只有元信息，没有内容、没有答案。"""
+        if self.is_lookup:
+            return {"case_id": self.case_id, "task": self.task,
+                    "kind": "lookup", "checks": list(self.checks)}
         return {
             "case_id": self.case_id,
             "task": self.task,
@@ -73,8 +82,11 @@ def validate_suite(path: str) -> list[str]:
     seen = set()
     for i, c in enumerate(cases):
         where = f"cases[{i}]"
-        for key in ("case_id", "family", "pair_id", "task", "catalog",
-                    "fixture_ref", "limits"):
+        kind = str(c.get("kind") or "interactive")
+        keys = ("case_id", "family", "task", "fixture_ref")
+        if kind == "interactive":
+            keys = keys + ("pair_id", "catalog", "limits")
+        for key in keys:
             if key not in c:
                 problems.append(f"{where}: 缺字段 {key}")
         cid = str(c.get("case_id", ""))
@@ -84,6 +96,11 @@ def validate_suite(path: str) -> list[str]:
         low = cid.lower()
         if any(h in low for h in ANSWER_HINTS):
             problems.append(f"{where}: case_id 含答案暗示（{cid}）")
+
+        if kind == "lookup":
+            if not isinstance(c.get("checks"), list) or not c["checks"]:
+                problems.append(f"{where}: lookup 用例必须给出 checks")
+            continue
 
         cat = c.get("catalog") or []
         if not isinstance(cat, list) or len(cat) < 2:
@@ -104,10 +121,12 @@ def load_suite(path: str) -> list[Case]:
     out = []
     for c in doc["cases"]:
         out.append(Case(case_id=c["case_id"], family=c["family"],
-                        pair_id=c["pair_id"], task=c["task"],
-                        catalog=list(c["catalog"]),
+                        pair_id=c.get("pair_id", ""), task=c["task"],
+                        catalog=list(c.get("catalog") or []),
                         fixture_ref=c["fixture_ref"],
-                        limits=dict(c.get("limits") or {})))
+                        limits=dict(c.get("limits") or {}),
+                        kind=str(c.get("kind") or "interactive"),
+                        checks=list(c.get("checks") or [])))
     return out
 
 
@@ -115,6 +134,18 @@ def load_oracle(path: str) -> dict[str, dict]:
     """金标只在评分阶段加载，runner 拿不到这个文件。"""
     doc = _read_json(path)
     return {row["case_id"]: row for row in doc["cases"]}
+
+
+def load_blob(fixtures_dir: str, ref: str) -> bytes:
+    """lookup 用例的输入：夹具目录里唯一那个非 JSON 文件。"""
+    folder = os.path.join(fixtures_dir, ref)
+    if not os.path.isdir(folder):
+        raise CaseError(f"夹具目录不存在：{folder}")
+    blobs = [n for n in sorted(os.listdir(folder)) if not n.endswith(".json")]
+    if len(blobs) != 1:
+        raise CaseError(f"{folder} 里应该恰好有一个输入文件，实际 {len(blobs)}")
+    with open(os.path.join(folder, blobs[0]), "rb") as fh:
+        return fh.read()
 
 
 def load_fixture(fixtures_dir: str, ref: str) -> dict[str, dict]:

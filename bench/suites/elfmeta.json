@@ -1,0 +1,31 @@
+{
+ "schema_version": 1,
+ "name": "elfmeta",
+ "description": "A 层：读 ELF 基础元数据。三份输入分别验证正常解析、另一字节序、截断处理。同一批用例换被测工具即可比较。",
+ "cases": [
+  {
+   "case_id": "c201",
+   "kind": "lookup",
+   "family": "elfmeta",
+   "task": "读出这份文件的基础 ELF 元数据（位宽、字节序、类型、目标机器）。",
+   "fixture_ref": "elf-a",
+   "checks": ["bits", "endian", "etype", "machine_id"]
+  },
+  {
+   "case_id": "c202",
+   "kind": "lookup",
+   "family": "elfmeta",
+   "task": "读出这份文件的基础 ELF 元数据（位宽、字节序、类型、目标机器）。",
+   "fixture_ref": "elf-b",
+   "checks": ["bits", "endian", "etype", "machine_id"]
+  },
+  {
+   "case_id": "c203",
+   "kind": "lookup",
+   "family": "elfmeta",
+   "task": "读这份文件；若无法给出元数据，说明属于哪一类失败。",
+   "fixture_ref": "elf-t",
+   "checks": ["error_kind"]
+  }
+ ]
+}

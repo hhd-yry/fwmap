@@ -1,0 +1,24 @@
+{
+ "schema_version": 1,
+ "note": "A 层金标：字段规格由任务包约定（大端/小端、exec/dyn、mips/arm）。provisional=true 表示尚未人工复核。",
+ "cases": [
+  {
+   "case_id": "c201",
+   "family": "elfmeta",
+   "expected_fields": {"bits": 32, "endian": "big", "etype": "exec", "machine_id": "mips"},
+   "provisional": true
+  },
+  {
+   "case_id": "c202",
+   "family": "elfmeta",
+   "expected_fields": {"bits": 32, "endian": "little", "etype": "dyn", "machine_id": "arm"},
+   "provisional": true
+  },
+  {
+   "case_id": "c203",
+   "family": "elfmeta",
+   "expect_error": "truncated",
+   "provisional": true
+  }
+ ]
+}

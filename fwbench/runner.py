@@ -1,4 +1,4 @@
-﻿"""执行：预算、超时、断点续跑，落盘 manifest / events / submission。
+"""执行：预算、超时、断点续跑，落盘 manifest / events / submission。
 
 硬规矩：
 * `run` 落盘成功只表示**评测器**完成了工作，允许里面有失败任务；
@@ -106,10 +106,49 @@ def _make_backend(records: dict, seed: int):
     return backend_for(records, seed=seed)
 
 
+def _run_lookup(case: Case, fixtures_dir: str, subject, out_dir: str) -> dict:
+    """A 层：把一份字节交给被测工具读，记下它给出的字段。"""
+    import time as _t
+
+    from .cases import load_blob
+
+    data = load_blob(fixtures_dir, case.fixture_ref)
+    run_id = f"{case.case_id}-{subject.subject_id}"
+    log = EventLog(os.path.join(out_dir, "events.jsonl"), run_id=run_id,
+                   case_id=case.case_id, repeat=1)
+    log.decision = 1
+    log.emit("decision", proposed_by=subject.subject_id,
+             action=f"inspect_elf({len(data)}B)",
+             executed_by_policy=subject.subject_id)
+    t0 = _t.time()
+    result = subject.inspect_elf(data)
+    log.emit("tool_result", tool="inspect_elf", ok=bool(result.get("ok")),
+             error=result.get("error"), content=result.get("fields") or {},
+             elapsed_ms=int((_t.time() - t0) * 1000))
+    sub = {"outcome": "answered" if result.get("ok") else str(result.get("error")),
+           "fields": result.get("fields") or {},
+           "error": result.get("error"),
+           "subject": subject.subject_id, "subject_version": subject.version}
+    log.emit("submission", submission=sub, proposed_by=subject.subject_id)
+    log.close()
+    with open(os.path.join(out_dir, "submission.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump(sub, fh, ensure_ascii=False, indent=1)
+    return {"case_id": case.case_id, "family": case.family, "pair_id": "",
+            "run_id": run_id, "repeat": 1, "policy": subject.subject_id,
+            "stop_reason": "submitted", "decisions": 1, "tool_calls_used": 1,
+            "served": [], "submission": sub}
+
+
 def run_suite(suite_path: str, fixtures_dir: str, profile_path: str,
-              out_dir: str, seed: int = 0, resume: bool = False) -> dict:
+              out_dir: str, seed: int = 0, resume: bool = False,
+              subject: str | None = None) -> dict:
     cases = load_suite(suite_path)
     profile = _profile(profile_path)
+    subject_obj = None
+    if subject:
+        from .subjects import get as get_subject
+        subject_obj = get_subject(subject)
 
     if os.path.isdir(out_dir) and not resume:
         if os.listdir(out_dir):
@@ -124,6 +163,7 @@ def run_suite(suite_path: str, fixtures_dir: str, profile_path: str,
         "profile": profile,
         "seed": seed,
         "cases": len(cases),
+        "subject": subject_obj.info() if subject_obj else None,
         "notes": "run 落盘成功只表示评测器完成了工作，允许其中存在失败任务",
     }
     with open(os.path.join(out_dir, "manifest.json"), "w",
@@ -132,6 +172,15 @@ def run_suite(suite_path: str, fixtures_dir: str, profile_path: str,
 
     rows = []
     for case in cases:
+        if case.is_lookup and subject_obj is not None:
+            case_dir = os.path.join(out_dir, "cases", case.case_id)
+            if resume and os.path.exists(os.path.join(case_dir, "submission.json")):
+                continue
+            if os.path.isdir(case_dir):
+                shutil.rmtree(case_dir)
+            os.makedirs(case_dir, exist_ok=True)
+            rows.append(_run_lookup(case, fixtures_dir, subject_obj, case_dir))
+            continue
         for repeat in range(1, int(profile.get("repeats", 1)) + 1):
             case_dir = os.path.join(out_dir, "cases", case.case_id)
             if resume and os.path.exists(os.path.join(case_dir, "submission.json")):

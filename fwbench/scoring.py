@@ -1,4 +1,4 @@
-﻿"""独立评分：从已落盘的提交与可见证据算通过标志。
+"""独立评分：从已落盘的提交与可见证据算通过标志。
 
 三条硬约束：
 1. 评分**不调模型**、不读未来事件、不读运行器内存；
@@ -46,7 +46,36 @@ def _supports(claim: dict, rec: dict) -> bool:
     return False
 
 
+def _score_lookup(case_dir: str, oracle_row: dict) -> dict:
+    """A 层：按任务包约定的字段逐项核对；可选依赖缺失记 not_run。"""
+    sub = _load_json(os.path.join(case_dir, "submission.json")) or {}
+    err = sub.get("error")
+    base = {"case_id": oracle_row["case_id"],
+            "family": oracle_row.get("family"),
+            "pair_id": oracle_row.get("pair_id") or "",
+            "outcome": sub.get("outcome"), "claim": sub.get("fields"),
+            "expected": oracle_row.get("expected_fields")
+            or oracle_row.get("expect_error"),
+            "citations": [], "served": [], "detail": []}
+    if err == "not_run":
+        return {**base, "passed": False, "failure": "not_run", "applicable": False}
+    if oracle_row.get("expect_error"):
+        ok = err == oracle_row["expect_error"]
+        return {**base, "passed": ok, "applicable": True,
+                "failure": None if ok else "wrong_error"}
+    want = oracle_row.get("expected_fields") or {}
+    got = sub.get("fields") or {}
+    bad = [k for k, v in want.items() if got.get(k) != v]
+    if err:
+        return {**base, "passed": False, "applicable": True,
+                "failure": "unexpected_error", "detail": [err]}
+    return {**base, "passed": not bad, "applicable": True,
+            "failure": None if not bad else "field_mismatch", "detail": bad}
+
+
 def score_case(case_dir: str, oracle_row: dict) -> dict:
+    if oracle_row.get("expected_fields") or oracle_row.get("expect_error"):
+        return _score_lookup(case_dir, oracle_row)
     ev_path = os.path.join(case_dir, "events.jsonl")
     sub_path = os.path.join(case_dir, "submission.json")
     sub = _load_json(sub_path)
@@ -97,6 +126,7 @@ def score_case(case_dir: str, oracle_row: dict) -> dict:
     return {"case_id": oracle_row["case_id"],
             "family": oracle_row.get("family"),
             "pair_id": oracle_row.get("pair_id"),
+            "applicable": True,
             "passed": failure is None,
             "failure": failure,
             "detail": detail,
@@ -120,12 +150,16 @@ def score_run(run_dir: str, oracle: dict[str, dict]) -> dict:
         results.append(score_case(os.path.join(cases_dir, cid), row))
 
     total = len(results)
-    passed = sum(1 for r in results if r["passed"])
-    answered = sum(1 for r in results if r["outcome"] == "answered")
-    ungrounded = sum(1 for r in results
+    applicable = [r for r in results if r.get("applicable", True)]
+    passed = sum(1 for r in applicable if r["passed"])
+    not_run = total - len(applicable)
+    answered = sum(1 for r in applicable if r["outcome"] == "answered")
+    ungrounded = sum(1 for r in applicable
                      if r["outcome"] == "answered" and not r["passed"])
     pairs = {}
-    for r in results:
+    for r in applicable:
+        if not r.get("pair_id"):
+            continue
         pairs.setdefault(r["pair_id"], []).append(r)
     pair_both = sum(1 for rs in pairs.values()
                     if len(rs) == 2 and all(x["passed"] for x in rs))
@@ -133,8 +167,11 @@ def score_run(run_dir: str, oracle: dict[str, dict]) -> dict:
     return {"run_dir": run_dir, "results": results,
             "metrics": {
                 "cases": total,
+                "applicable": len(applicable),
+                "not_run": not_run,
                 "passed": passed,
-                "pass_rate": round(passed / total, 3) if total else None,
+                "pass_rate": (round(passed / len(applicable), 3)
+                              if applicable else None),
                 "answered": answered,
                 "ungrounded_answered": ungrounded,
                 "ungrounded_rate": (round(ungrounded / answered, 3)

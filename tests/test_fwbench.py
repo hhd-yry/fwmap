@@ -1,4 +1,4 @@
-"""fwbench 自身的测试：验证评测器，不是验证 fwmap。
+﻿"""fwbench 自身的测试：验证评测器，不是验证 fwmap。
 
 对应实施计划第 7 节的验收点：
   · 用例校验能挡住"答案写进 id"
@@ -13,6 +13,7 @@
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -119,7 +120,7 @@ def main() -> int:
     ok &= check("无夹具也能重算", re["metrics"]["cases"] == 2, re["metrics"])
     md = RP.render_markdown(re)
     ok &= check("报告与汇总同源",
-                f"{re['metrics']['passed']}" in md and "通过率" not in md)
+                f"通过：{re['metrics']['passed']}" in md and f"用例数：{re['metrics']['cases']}" in md)
 
     # 8) 金标换成相反答案 → 旧的运行记录被重判
     flipped = dict(oracle["c017"])
@@ -142,6 +143,54 @@ def main() -> int:
     # 10) 运行目录里没有金标文件
     leaked = [f for _, _, fs in os.walk(run_dir) for f in fs if "oracle" in f]
     ok &= check("运行目录不含金标", not leaked, leaked)
+
+    # 11) A 层：两份 ELF 夹具 + 截断，三个被测工具用同一份金标
+    ELF_SUITE = os.path.join(BENCH, "suites", "elfmeta.json")
+    ELF_ORACLE = os.path.join(BENCH, "oracle", "elfmeta.json")
+    ok &= check("elfmeta 套件校验通过", C.validate_suite(ELF_SUITE) == [],
+                C.validate_suite(ELF_SUITE))
+    elf_oracle = C.load_oracle(ELF_ORACLE)
+
+    for subject in ("fwmap", "stdlib"):
+        d = os.path.join(tmp, f"elf-{subject}")
+        R.run_suite(ELF_SUITE, FIX, PROF_RULE, d, subject=subject)
+        s = S.score_run(d, elf_oracle)
+        ok &= check(f"{subject} 三例全过", s["metrics"]["passed"] == 3,
+                    s["metrics"])
+
+    # 12) 未安装的可选依赖 → 不适用，且不进分母
+    d = os.path.join(tmp, "elf-elftools")
+    R.run_suite(ELF_SUITE, FIX, PROF_RULE, d, subject="elftools")
+    s = S.score_run(d, elf_oracle)
+    ok &= check("未安装的依赖记 not_run",
+                s["metrics"]["not_run"] == 3 and s["metrics"]["applicable"] == 0,
+                s["metrics"])
+    ok &= check("全不适用时通过率是 null 而不是 0",
+                s["metrics"]["pass_rate"] is None, s["metrics"])
+
+    # 13) 截断文件要归类成 truncated（本用例发现了 fwmap 的分类缺陷）
+    from fwbench.subjects import get as get_subject
+    trunc = open(os.path.join(FIX, "elf-t", "input.bin"), "rb").read()
+    got = get_subject("fwmap").inspect_elf(trunc)
+    ok &= check("fwmap 把截断文件报成 truncated",
+                got["error"] == "truncated", got)
+
+    # 14) 内核不依赖 fwmap：阻断导入后仍能跑 stdlib
+    script = (
+        "import sys; sys.modules['fwmap'] = None\n"
+        "import fwbench.cases, fwbench.scoring, fwbench.report, fwbench.runner\n"
+        "from fwbench.subjects import get\n"
+        "s = get('stdlib')\n"
+        "d = open(r'%s/bench/fixtures/elf-a/input.bin','rb').read()\n"
+        "r = s.inspect_elf(d)\n"
+        "print('OK' if r['fields'].get('machine_id') == 'mips' else 'BAD')\n"
+    ) % ROOT
+    proc = subprocess.run([sys.executable, "-c", script], cwd=ROOT,
+                          capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
+    ok &= check("内核在无 fwmap 环境可独立运行",
+                "OK" in (proc.stdout or ""),
+                (proc.stdout or "") + (proc.stderr or "")[-200:])
 
     shutil.rmtree(tmp, ignore_errors=True)
     print()

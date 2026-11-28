@@ -221,9 +221,17 @@ def _read_from_dynamic(data: bytes, info: "ELFInfo", bits: int, endian: str,
 
 
 def read_elf(data: bytes) -> ELFInfo:
-    """解析 ELF。失败抛 ELFError。"""
-    if len(data) < 52 or data[:4] != b"\x7fELF":
+    """解析 ELF。失败抛 ELFError。
+
+    错误分类要分开：**不是 ELF** 和 **ELF 但被截断** 是两件事。
+    以前两者都报 "not an ELF file"，截断文件会被误判成"根本不是 ELF"
+    （fwbench 的 A 层用例 c203 就是这么发现的）。
+    """
+    if data[:4] != b"\x7fELF":
         raise ELFError("not an ELF file")
+    if len(data) < 52:
+        raise ELFError(f"truncated header: 只有 {len(data)} 字节，"
+                       f"至少需要 52")
 
     ei_class = data[4]
     ei_data = data[5]
