@@ -1,12 +1,19 @@
-import json
+﻿import json
 import sys
 
 import paramiko
 
+try:
+    from vmcfg import HOST, PWD, USER, require
+except ImportError:
+    from .vmcfg import HOST, PWD, USER, require  # type: ignore
+
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+require()
 c = paramiko.SSHClient()
+require()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect("192.168.8.137", username="ubuntu", password="ubuntu", timeout=20)
+c.connect(HOST, username=USER, password=PWD, timeout=20)
 
 for path in ("/tmp/rec/temp00/temp00-1.json", "/tmp/rec/temp07/temp07-2.json"):
     try:

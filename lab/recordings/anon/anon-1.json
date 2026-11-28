@@ -2,28 +2,16 @@
  "trace": [
   {
    "step": 1,
-   "action": "probe",
-   "args": {
-    "uri": "/admin/login"
-   },
-   "ok": false,
-   "detail": "/admin/login→not-found",
-   "source": "model",
-   "mode": "action",
-   "why": "这个URI是管理员登录的入口点，通常用于安全检查和认证。"
-  },
-  {
-   "step": 2,
    "action": "pages",
    "args": {},
    "ok": true,
    "detail": "104 个表单",
-   "source": "heuristic",
+   "source": "model",
    "mode": "action",
-   "why": "这几条都试过了，换没试过的"
+   "why": "扫描固件自带的网页表单，拿到浏览器真实提交的 URL 与字段"
   },
   {
-   "step": 3,
+   "step": 2,
    "action": "routes",
    "args": {
     "mechanism": "strings_goform"
@@ -32,10 +20,10 @@
    "detail": "0 个路径",
    "source": "heuristic",
    "mode": "action",
-   "why": "动作不合法（缺参数 mechanism）"
+   "why": "pages 已经成功做过，换一个"
   },
   {
-   "step": 4,
+   "step": 3,
    "action": "probe",
    "args": {
     "uri": "/apply.cgi"
@@ -44,19 +32,31 @@
    "detail": "/apply.cgi→handler",
    "source": "model",
    "mode": "probe-select",
-   "why": "感觉这是个空闲的槽位"
+   "why": "第一个编号，直觉上可能是第一个可用的端点"
   },
   {
-   "step": 5,
+   "step": 4,
    "action": "probe",
    "args": {
     "uri": "/online_firmware_check.cgi"
    },
    "ok": true,
    "detail": "/online_firmware_check.cgi→handler",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "pages 已经成功做过，换一个"
+  },
+  {
+   "step": 5,
+   "action": "probe",
+   "args": {
+    "uri": "/log_last_page.cgi"
+   },
+   "ok": true,
+   "detail": "/log_last_page.cgi→handler",
    "source": "model",
    "mode": "probe-select",
-   "why": "固件内部的逻辑可能基于某个特定的编号来决定使用哪个端点"
+   "why": "The number 4 is often associated with the concept of mystery or surprise."
   },
   {
    "step": 6,
@@ -66,33 +66,33 @@
    },
    "ok": true,
    "detail": "/log_first_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "这个编号是固件中第一个被发现的端点"
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 tool（它只认 这个动作不收参数））"
   },
   {
    "step": 7,
-   "action": "probe",
-   "args": {
-    "uri": "/log_last_page.cgi"
-   },
-   "ok": true,
-   "detail": "/log_last_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "根据直觉，选择编号为 01 的端点，因为它是固件中唯一未命名的端点。"
-  },
-  {
-   "step": 8,
    "action": "probe",
    "args": {
     "uri": "/log_next_page.cgi"
    },
    "ok": true,
    "detail": "/log_next_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "基于直觉，第一个编号通常表示第一个可用的端点"
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（缺参数 mechanism）"
+  },
+  {
+   "step": 8,
+   "action": "probe",
+   "args": {
+    "uri": "/log_previous_page.cgi"
+   },
+   "ok": true,
+   "detail": "/log_previous_page.cgi→handler",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 uri（它只认 这个动作不收参数））"
   }
  ],
  "status": "budget_exhausted",
@@ -137,22 +137,16 @@
   "/system_time.cgi"
  ],
  "probed": {
-  "/admin/login": "not-found",
   "/apply.cgi": "handler",
   "/online_firmware_check.cgi": "handler",
-  "/log_first_page.cgi": "handler",
   "/log_last_page.cgi": "handler",
-  "/log_next_page.cgi": "handler"
+  "/log_first_page.cgi": "handler",
+  "/log_next_page.cgi": "handler",
+  "/log_previous_page.cgi": "handler"
  },
- "handlers": 5,
+ "handlers": 6,
  "findings": [],
  "evidence": {
-  "/admin/login": {
-   "verdict": "not-found",
-   "len": 248,
-   "status": "no-crash",
-   "snippet": "<HTML><HEAD><TITLE>404 Not Found</TITLE></HEAD>"
-  },
   "/apply.cgi": {
    "verdict": "handler",
    "len": 1818,
@@ -165,13 +159,13 @@
    "status": "no-crash",
    "snippet": "<html>"
   },
-  "/log_first_page.cgi": {
+  "/log_last_page.cgi": {
    "verdict": "handler",
    "len": 1818,
    "status": "no-crash",
    "snippet": "<html>"
   },
-  "/log_last_page.cgi": {
+  "/log_first_page.cgi": {
    "verdict": "handler",
    "len": 1818,
    "status": "no-crash",
@@ -182,21 +176,28 @@
    "len": 1818,
    "status": "no-crash",
    "snippet": "<html>"
+  },
+  "/log_previous_page.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
   }
  },
  "stats": {
   "steps": 8,
-  "model_steps": 6,
+  "model_steps": 3,
   "rule_steps": 0,
-  "fallback_steps": 2,
-  "model_share": 0.75,
-  "rejects": 2,
+  "fallback_steps": 5,
+  "model_share": 0.38,
+  "rejects": 5,
   "reject_kinds": {
-   "重复探测": 1,
+   "重复动作": 2,
+   "多余参数": 2,
    "缺参数": 1
   },
   "probed": 6,
-  "handlers": 5,
+  "handlers": 6,
   "anomalies": [],
   "verdict_tried": 0,
   "verdict_accepted": 0,

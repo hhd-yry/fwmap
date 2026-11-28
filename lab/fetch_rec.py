@@ -1,4 +1,4 @@
-"""把 VM 上的运行记录取回 `lab/recordings/`，供离线重算。
+﻿"""把 VM 上的运行记录取回 `lab/recordings/`，供离线重算。
 
     py -3 lab/fetch_rec.py [远程根目录]      # 默认 /tmp/rec
 """
@@ -7,6 +7,11 @@ import os
 import sys
 
 import paramiko
+
+try:
+    from vmcfg import HOST, PWD, USER, require
+except ImportError:
+    from .vmcfg import HOST, PWD, USER, require  # type: ignore
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEST = os.path.join(ROOT, "lab", "recordings")
@@ -17,9 +22,11 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 def main() -> int:
     remote_root = sys.argv[1] if len(sys.argv) > 1 else "/tmp/rec"
+    require()
     c = paramiko.SSHClient()
+    require()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect("192.168.8.137", username="ubuntu", password="ubuntu", timeout=20)
+    c.connect(HOST, username=USER, password=PWD, timeout=20)
     sftp = c.open_sftp()
     total = 0
     for g in GROUPS:

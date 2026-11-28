@@ -80,6 +80,22 @@ _PROMPT = """你在控制一个固件分析工具。每一步只能做一个动�
 """
 
 
+def _alias_map(state: dict) -> dict:
+    """匿名模式下 uri → /slot-NN 的固定映射（同一轮内不变）。"""
+    amap = state.setdefault("alias", {})
+    for uri in state.get("candidates") or []:
+        if uri not in amap:
+            amap[uri] = f"/slot-{len(amap) + 1:02d}"
+    return amap
+
+
+def _show(state: dict, uri: str) -> str:
+    """在提示里怎么称呼这个 uri —— 匿名模式下换成编号。"""
+    if not state.get("anonymize"):
+        return uri
+    return _alias_map(state).get(uri, "/slot-??")
+
+
 def state_brief(state: dict) -> str:
     """把状态压成几行——模型不需要看原始 JSON。"""
     lines = [f"二进制: {os.path.basename(state.get('binary') or '?')}"
@@ -98,7 +114,7 @@ def state_brief(state: dict) -> str:
         for i, uri in enumerate(cands[:12], 1):
             hit = probed.get(uri)
             tag = f" → 已试：{hit}" if hit else ""
-            lines.append(f"  {i}. {uri}{tag}")
+            lines.append(f"  {i}. {_show(state, uri)}{tag}")
         if len(cands) > 12:
             lines.append(f"  ……另有 {len(cands) - 12} 条没列出")
     else:
@@ -124,13 +140,13 @@ def state_brief(state: dict) -> str:
     if ev:
         lines.append("你看到过的证据（下 verdict 时照抄其中几行）：")
         for uri, d in list(ev.items())[-10:]:
-            lines.append(f"  · {uri} {d.get('len')}B {d.get('verdict')}"
+            lines.append(f"  · {_show(state, uri)} {d.get('len')}B {d.get('verdict')}"
                          + (f" 首行:{d['snippet']}" if d.get("snippet") else ""))
         odd = [u for u, d in ev.items()
                if d.get("len") == 0 or d.get("verdict") == "unknown"]
         if odd and not state.get("findings"):
-            lines.append(f"注意：{', '.join(odd[:3])} 没有正常响应 —— "
-                         "该用 verdict 下结论了。")
+            lines.append(f"注意：{', '.join(_show(state, u) for u in odd[:3])} "
+                         "没有正常响应 —— 该用 verdict 下结论了。")
 
     hist = state.get("history") or []
     if hist:
@@ -200,16 +216,31 @@ def _decide_verdict(state: dict, chat) -> dict | None:
     把异常撂在那儿（实测第一次就是这么绕过去的）。
     """
     ev = state.get("evidence") or {}
+    anon = bool(state.get("anonymize"))
+    amap = _alias_map(state) if anon else {}
+
+    def _show_uri(u: str) -> str:
+        return amap.get(u, u) if anon else u
+
+    def _real(text: str) -> str:
+        """把引文里的 /slot-NN 换回真实 uri，保持匿名模式的输出可用。"""
+        if not anon:
+            return text
+        for uri, label in amap.items():
+            text = text.replace(label, uri)
+        return text
+
     odd = [u for u, d in ev.items()
            if d.get("len") == 0 or d.get("verdict") == "unknown"]
     if not odd:
         return None
     rows = []
     for uri, d in list(ev.items())[-8:]:
-        rows.append(f"  · {uri} {d.get('len')}B {d.get('verdict')}"
+        rows.append(f"  · {_show_uri(uri)} {d.get('len')}B {d.get('verdict')}"
                     + (f" 首行:{d['snippet']}" if d.get("snippet") else ""))
-    prompt = _VERDICT_PROMPT.format(target=", ".join(odd[:3]), first=odd[0],
-                                    rows="\n".join(rows))
+    prompt = _VERDICT_PROMPT.format(
+        target=", ".join(_show_uri(u) for u in odd[:3]),
+        first=_show_uri(odd[0]), rows="\n".join(rows))
     try:
         reply = chat([{"role": "user", "content": prompt}], max_new_tokens=160) or ""
     except Exception:                                          # noqa: BLE001
@@ -221,7 +252,12 @@ def _decide_verdict(state: dict, chat) -> dict | None:
         obj = json.loads(m.group(0))
     except ValueError:
         return None
-    if obj.get("uri") not in odd:
+    picked = obj.get("uri")
+    if anon:
+        target = next((u for u in odd if amap.get(u) == picked), None)
+    else:
+        target = picked if picked in odd else None
+    if target is None:
         return None                      # 挑了条不反常的说"正常"，不算回答
     if obj.get("kind") not in ACTIONS["verdict"]["args"]["kind"]:
         return None
@@ -231,9 +267,9 @@ def _decide_verdict(state: dict, chat) -> dict | None:
         ev_lines = []
     state["last_reject"] = ""
     return {"action": "verdict",
-            "args": {"uri": obj["uri"], "kind": obj["kind"],
+            "args": {"uri": target, "kind": obj["kind"],
                      "why": str(obj.get("why") or "")[:160],
-                     "evidence": [str(x) for x in ev_lines][:6]},
+                     "evidence": [_real(str(x)) for x in ev_lines][:6]},
             "why": str(obj.get("why") or "")[:160],
             "_source": "model", "_mode": "verdict"}
 
@@ -278,8 +314,9 @@ def _decide_probe(state: dict, chat) -> dict | None:
 
     rows = []
     if anon:
+        amap = _alias_map(state)
         for i, uri in enumerate(left[:20], 1):
-            label = f"/slot-{i:02d}"
+            label = amap.get(uri) or f"/slot-{i:02d}"
             label_to_real[label] = uri
             rows.append(f"{i}. {label}")
         prompt = _PROBE_PROMPT_ANON.format(n=len(left), cands="\n".join(rows))
@@ -311,6 +348,49 @@ def _decide_probe(state: dict, chat) -> dict | None:
     state["last_reject"] = ""
     return {"action": "probe", "args": {"uri": picked}, "why": obj.get("why", ""),
             "_source": "model", "_mode": "probe-select"}
+
+
+def _deanon(state: dict, act: dict) -> tuple[bool, str]:
+    """匿名模式下把模型输出里的 /slot-NN 换回真实 uri。
+
+    通用提示里候选也被编号化了（否则匿名就漏了），所以模型完全可能直接
+    回一句 probe {"uri": "/slot-01"} —— 不换回来就会拿 /slot-01 去探（实测踩过）。
+    """
+    if not state.get("anonymize"):
+        return True, ""
+    amap = _alias_map(state)
+    rev = {v: k for k, v in amap.items()}
+    args = act.get("args") or {}
+
+    def _map(value):
+        if isinstance(value, str):
+            return rev.get(value.strip())
+        if isinstance(value, list):
+            out = [rev.get(str(x).strip()) for x in value]
+            return None if any(m is None for m in out) else out
+        return None
+
+    if act.get("action") == "probe":
+        raw = args.get("uri")
+        mapped = _map(raw)
+        if mapped is None:
+            return False, "探针用了不在候选里的编号"
+        args["uri"] = mapped
+    elif act.get("action") == "verdict":
+        target = args.get("uri")
+        real = rev.get(str(target).strip()) if isinstance(target, str) else None
+        if real is None:
+            return False, "结论指向的编号不在候选里"
+        args["uri"] = real
+        if isinstance(args.get("evidence"), list):
+            fixed = []
+            for item in args["evidence"]:
+                text = str(item)
+                for label, uri in rev.items():
+                    text = text.replace(label, uri)
+                fixed.append(text)
+            args["evidence"] = fixed
+    return True, ""
 
 
 def _probe_uris(args) -> list[str]:
@@ -394,6 +474,11 @@ def _decide(state: dict, chat) -> dict:
     ok, why = _validate(act)
     if not ok:
         return _heuristic(state, why=f"动作不合法（{why}）")
+
+    # 匿名模式下模型答的是编号，先换回真实 uri 再往下走
+    ok, why = _deanon(state, act)
+    if not ok:
+        return _heuristic(state, why=f"匿名模式：{why}")
 
     # 防打转：同一个动作用同样的参数已经成功做过，就不再重复。
     # pages 这类不带参数的动作，换个 url/urls 也算同一个 —— 否则改个参数名就能绕过。

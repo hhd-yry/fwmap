@@ -20,7 +20,7 @@
    "detail": "0 个路径",
    "source": "heuristic",
    "mode": "action",
-   "why": "pages 已经成功做过，换一个"
+   "why": "动作不合法（多余的参数 urls（它只认 这个动作不收参数））"
   },
   {
    "step": 3,
@@ -32,7 +32,7 @@
    "detail": "/apply.cgi→handler",
    "source": "model",
    "mode": "probe-select",
-   "why": "这个名字容易记忆，适合在不同的设备上使用。"
+   "why": "直觉认为第一个编号可能是名称或特定功能的一部分"
   },
   {
    "step": 4,
@@ -42,9 +42,9 @@
    },
    "ok": true,
    "detail": "/online_firmware_check.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "这个名字和参数都被隐藏了，但根据直觉，/slot-01 是第一个可用的选项。"
+   "source": "heuristic",
+   "mode": "action",
+   "why": "pages 已经成功做过，换一个"
   },
   {
    "step": 5,
@@ -54,9 +54,9 @@
    },
    "ok": true,
    "detail": "/log_first_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "根据固件的描述，/slot-01 是第一个候选端点，且没有明确的名字或参数信息。"
+   "source": "heuristic",
+   "mode": "action",
+   "why": "pages 已经成功做过，换一个"
   },
   {
    "step": 6,
@@ -66,24 +66,12 @@
    },
    "ok": true,
    "detail": "/log_last_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "因为它看起来是唯一的，且在列表中位置最小"
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 tool（它只认 这个动作不收参数））"
   },
   {
    "step": 7,
-   "action": "probe",
-   "args": {
-    "uri": "/log_next_page.cgi"
-   },
-   "ok": true,
-   "detail": "/log_next_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "因为这个名字是固件中最常见的，且编号最小，所以最有可能是一个有效的端点名称。"
-  },
-  {
-   "step": 8,
    "action": "probe",
    "args": {
     "uri": "/log_previous_page.cgi"
@@ -92,7 +80,19 @@
    "detail": "/log_previous_page.cgi→handler",
    "source": "model",
    "mode": "probe-select",
-   "why": "直觉上选择第一个编号"
+   "why": "固件中没有提供端点的名称，但根据编号选择第一个"
+  },
+  {
+   "step": 8,
+   "action": "probe",
+   "args": {
+    "uri": "/log_next_page.cgi"
+   },
+   "ok": true,
+   "detail": "/log_next_page.cgi→handler",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 urls（它只认 这个动作不收参数））"
   }
  ],
  "status": "budget_exhausted",
@@ -141,8 +141,8 @@
   "/online_firmware_check.cgi": "handler",
   "/log_first_page.cgi": "handler",
   "/log_last_page.cgi": "handler",
-  "/log_next_page.cgi": "handler",
-  "/log_previous_page.cgi": "handler"
+  "/log_previous_page.cgi": "handler",
+  "/log_next_page.cgi": "handler"
  },
  "handlers": 6,
  "findings": [],
@@ -171,13 +171,13 @@
    "status": "no-crash",
    "snippet": "<html>"
   },
-  "/log_next_page.cgi": {
+  "/log_previous_page.cgi": {
    "verdict": "handler",
    "len": 1818,
    "status": "no-crash",
    "snippet": "<html>"
   },
-  "/log_previous_page.cgi": {
+  "/log_next_page.cgi": {
    "verdict": "handler",
    "len": 1818,
    "status": "no-crash",
@@ -186,14 +186,14 @@
  },
  "stats": {
   "steps": 8,
-  "model_steps": 6,
+  "model_steps": 2,
   "rule_steps": 0,
-  "fallback_steps": 2,
-  "model_share": 0.75,
-  "rejects": 2,
+  "fallback_steps": 6,
+  "model_share": 0.25,
+  "rejects": 6,
   "reject_kinds": {
-   "多余参数": 1,
-   "重复动作": 1
+   "多余参数": 4,
+   "重复动作": 2
   },
   "probed": 6,
   "handlers": 6,

@@ -8,10 +8,22 @@
    "detail": "104 个表单",
    "source": "heuristic",
    "mode": "action",
-   "why": "动作不合法（多余的参数 urls（它只认 这个动作不收参数））"
+   "why": "动作不合法（多余的参数 probe_uri（它只认 这个动作不收参数））"
   },
   {
    "step": 2,
+   "action": "probe",
+   "args": {
+    "uri": "/apply.cgi"
+   },
+   "ok": true,
+   "detail": "/apply.cgi→handler",
+   "source": "model",
+   "mode": "action",
+   "why": "我选择这个是因为它是第一个可能的入口点，而且它的长度为 8 字节，这通常意味着这是一个静态页面。"
+  },
+  {
+   "step": 3,
    "action": "routes",
    "args": {
     "mechanism": "strings_goform"
@@ -23,18 +35,6 @@
    "why": "pages 已经成功做过，换一个"
   },
   {
-   "step": 3,
-   "action": "probe",
-   "args": {
-    "uri": "/apply.cgi"
-   },
-   "ok": true,
-   "detail": "/apply.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "根据直觉，我选择了编号为 01 的端点。"
-  },
-  {
    "step": 4,
    "action": "probe",
    "args": {
@@ -42,9 +42,9 @@
    },
    "ok": true,
    "detail": "/online_firmware_check.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "根据直觉，第一个编号可能代表默认或基本的端点"
+   "source": "heuristic",
+   "mode": "action",
+   "why": "pages 已经成功做过，换一个"
   },
   {
    "step": 5,
@@ -54,49 +54,20 @@
    },
    "ok": true,
    "detail": "/log_first_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "直觉是 '/slot-01'"
+   "source": "heuristic",
+   "mode": "action",
+   "why": "pages 已经成功做过，换一个"
   },
   {
    "step": 6,
-   "action": "probe",
-   "args": {
-    "uri": "/log_last_page.cgi"
-   },
-   "ok": true,
-   "detail": "/log_last_page.cgi→handler",
+   "action": "done",
    "source": "model",
-   "mode": "probe-select",
-   "why": "这个编号看起来像是用于处理特定请求的端点，可能与系统中的某个功能或操作相关。"
-  },
-  {
-   "step": 7,
-   "action": "probe",
-   "args": {
-    "uri": "/log_next_page.cgi"
-   },
-   "ok": true,
-   "detail": "/log_next_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "直觉是第一个可用的名称"
-  },
-  {
-   "step": 8,
-   "action": "probe",
-   "args": {
-    "uri": "/log_previous_page.cgi"
-   },
-   "ok": true,
-   "detail": "/log_previous_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "因为这个名字看起来最简单明了，且易于记忆。"
+   "mode": "action",
+   "why": ""
   }
  ],
- "status": "budget_exhausted",
- "stop_reason": "预算用尽（8 步）",
+ "status": "completed",
+ "stop_reason": "已收工（模型或规则判定没有更多可做的）",
  "pending": [],
  "candidates": [
   "/apply.cgi",
@@ -139,12 +110,9 @@
  "probed": {
   "/apply.cgi": "handler",
   "/online_firmware_check.cgi": "handler",
-  "/log_first_page.cgi": "handler",
-  "/log_last_page.cgi": "handler",
-  "/log_next_page.cgi": "handler",
-  "/log_previous_page.cgi": "handler"
+  "/log_first_page.cgi": "handler"
  },
- "handlers": 6,
+ "handlers": 3,
  "findings": [],
  "evidence": {
   "/apply.cgi": {
@@ -164,39 +132,21 @@
    "len": 1818,
    "status": "no-crash",
    "snippet": "<html>"
-  },
-  "/log_last_page.cgi": {
-   "verdict": "handler",
-   "len": 1818,
-   "status": "no-crash",
-   "snippet": "<html>"
-  },
-  "/log_next_page.cgi": {
-   "verdict": "handler",
-   "len": 1818,
-   "status": "no-crash",
-   "snippet": "<html>"
-  },
-  "/log_previous_page.cgi": {
-   "verdict": "handler",
-   "len": 1818,
-   "status": "no-crash",
-   "snippet": "<html>"
   }
  },
  "stats": {
-  "steps": 8,
-  "model_steps": 6,
+  "steps": 6,
+  "model_steps": 2,
   "rule_steps": 0,
-  "fallback_steps": 2,
-  "model_share": 0.75,
-  "rejects": 2,
+  "fallback_steps": 4,
+  "model_share": 0.33,
+  "rejects": 4,
   "reject_kinds": {
    "多余参数": 1,
-   "重复动作": 1
+   "重复动作": 3
   },
-  "probed": 6,
-  "handlers": 6,
+  "probed": 3,
+  "handlers": 3,
   "anomalies": [],
   "verdict_tried": 0,
   "verdict_accepted": 0,

@@ -3,12 +3,17 @@ import sys
 
 import paramiko
 
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-HOST, USER, PWD = "192.168.8.137", "ubuntu", "ubuntu"
+try:
+    from vmcfg import HOST, PWD, USER, require
+except ImportError:
+    from .vmcfg import HOST, PWD, USER, require  # type: ignore
 
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+require()
 c = paramiko.SSHClient()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect(HOST, username=USER, password=PWD, timeout=15)
+c.connect(HOST, username=USER, password=PWD, timeout=20)
 s = c.open_sftp()
 
 for tag, path in (("LLM", "/tmp/plan-d615.json"), ("NOLLM", "/tmp/plan-d615-nollm.json")):

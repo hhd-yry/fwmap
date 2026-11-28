@@ -1,4 +1,4 @@
-"""反向隧道：让 VM 的 127.0.0.1:11434 通到 Windows 的 127.0.0.1:11434。
+﻿"""反向隧道：让 VM 的 127.0.0.1:11434 通到 Windows 的 127.0.0.1:11434。
 
 为什么是反向：Windows 上开着防火墙，入站 11434 不一定放行；但 SSH 出站是通的。
 所以让 VM 的 sshd 去监听 11434，把连接沿这条已建立的 SSH 连接送回来。
@@ -8,7 +8,10 @@ import threading
 
 import paramiko
 
-HOST, USER, PWD = "192.168.8.137", "ubuntu", "ubuntu"
+try:
+    from vmcfg import HOST, PWD, USER, require
+except ImportError:
+    from .vmcfg import HOST, PWD, USER, require  # type: ignore
 PORT = 11434
 
 
@@ -30,7 +33,9 @@ def pipe(src, dst):
 
 
 def main():
+    require()
     c = paramiko.SSHClient()
+    require()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     c.connect(HOST, username=USER, password=PWD, timeout=15)
     t = c.get_transport()

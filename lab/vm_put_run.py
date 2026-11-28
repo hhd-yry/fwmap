@@ -9,7 +9,10 @@ import sys
 
 import paramiko
 
-HOST, USER, PWD = "192.168.8.137", "ubuntu", "ubuntu"
+try:
+    from vmcfg import HOST, PWD, USER, require
+except ImportError:
+    from .vmcfg import HOST, PWD, USER, require  # type: ignore
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -19,9 +22,10 @@ def main():
     local = sys.argv[1]
     prefix = " ".join(sys.argv[2:]) or "python3"
     remote = "/tmp/" + os.path.basename(local)
+    require()
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(HOST, username=USER, password=PWD, timeout=15)
+    c.connect(HOST, username=USER, password=PWD, timeout=20)
     s = c.open_sftp()
     s.put(local, remote)
     s.close()

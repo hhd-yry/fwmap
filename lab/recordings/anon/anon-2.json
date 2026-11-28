@@ -8,7 +8,7 @@
    "detail": "104 个表单",
    "source": "heuristic",
    "mode": "action",
-   "why": "动作不合法（多余的参数 pages（它只认 这个动作不收参数））"
+   "why": "动作不合法（多余的参数 url（它只认 这个动作不收参数））"
   },
   {
    "step": 2,
@@ -20,7 +20,7 @@
    "detail": "0 个路径",
    "source": "heuristic",
    "mode": "action",
-   "why": "动作不合法（多余的参数 target_url（它只认 这个动作不收参数））"
+   "why": "pages 已经成功做过，换一个"
   },
   {
    "step": 3,
@@ -32,7 +32,7 @@
    "detail": "/apply.cgi→handler",
    "source": "model",
    "mode": "probe-select",
-   "why": "我感觉这个编号可能是最常用的一条，因为它是第一个被分配的端点。"
+   "why": "我感觉这个编号看起来像是系统中常用的默认槽位"
   },
   {
    "step": 4,
@@ -42,9 +42,9 @@
    },
    "ok": true,
    "detail": "/online_firmware_check.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "直觉上第一个可用的端点"
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 mechanism（它只认 这个动作不收参数））"
   },
   {
    "step": 5,
@@ -54,9 +54,9 @@
    },
    "ok": true,
    "detail": "/log_first_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "直觉上第一个编号，没有看到名字，应该先尝试使用这个端点"
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 prefix（它只认 这个动作不收参数））"
   },
   {
    "step": 6,
@@ -66,9 +66,9 @@
    },
    "ok": true,
    "detail": "/log_last_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "直觉认为这是最有可能的编号，因为它在候选列表中排在首位。"
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 uri（它只认 这个动作不收参数））"
   },
   {
    "step": 7,
@@ -78,9 +78,9 @@
    },
    "ok": true,
    "detail": "/log_next_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "因为这个名字看起来最接近固件的命名习惯，且没有明显含义。"
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 page（它只认 这个动作不收参数））"
   },
   {
    "step": 8,
@@ -90,9 +90,9 @@
    },
    "ok": true,
    "detail": "/log_previous_page.cgi→handler",
-   "source": "model",
-   "mode": "probe-select",
-   "why": "这个名字与固件的预期相符，且是唯一的"
+   "source": "heuristic",
+   "mode": "action",
+   "why": "匿名模式：探针用了不在候选里的编号"
   }
  ],
  "status": "budget_exhausted",
@@ -186,13 +186,15 @@
  },
  "stats": {
   "steps": 8,
-  "model_steps": 6,
+  "model_steps": 1,
   "rule_steps": 0,
-  "fallback_steps": 2,
-  "model_share": 0.75,
-  "rejects": 2,
+  "fallback_steps": 7,
+  "model_share": 0.12,
+  "rejects": 7,
   "reject_kinds": {
-   "多余参数": 2
+   "多余参数": 5,
+   "重复动作": 1,
+   "其它": 1
   },
   "probed": 6,
   "handlers": 6,
