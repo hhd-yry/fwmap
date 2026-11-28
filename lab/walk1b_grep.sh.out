@@ -1,0 +1,13 @@
+表单 104 个 → 去重后 36 条 URI
+
+含 login 的端点：
+  /login.cgi
+     参数: html_response_page, login_name, login_pass, graph_id, alert_id, login_n, log_pass, graph_code, Login
+  /relogin_auth.cgi
+     参数: html_response_page
+
+全固件里带 graph 字样的参数：
+  graph_auth_enable, graph_code, graph_id, graphical_enable
+
+--- stderr ---
+[sudo] password for ubuntu: 
