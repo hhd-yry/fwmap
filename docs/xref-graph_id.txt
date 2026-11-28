@@ -1,0 +1,118 @@
+INFO  Using log config file: jar:file:/C:/deepseek/fwmap-tool/tools/ghidra_12.2_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: C:\deepseek\fwmap-tool\fwmap-m2\xref-169512\ghidra-temp\appdata\ghidra\ghidra_12.2_PUBLIC\application.log (LoggingInitialization)  
+INFO  Loading user preferences: C:\deepseek\fwmap-tool\fwmap-m2\xref-169512\ghidra-temp\appdata\ghidra\ghidra_12.2_PUBLIC\preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (876 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: SHA1PRNG (SecureRandomFactory)  
+WARN  OS Truststore load failed: java.security.KeyStoreException: error 5, ¾ܾø·ÃÎʡ (DefaultTrustManagerFactory)  
+INFO  Loaded 118 trusted CA certificates from the Java default trust store. (DefaultTrustManagerFactory)  
+INFO  Starting cache cleanup: C:\deepseek\fwmap-tool\fwmap-m2\xref-169512\ghidra-temp\appdata\ghidra\fscache2 (FileCacheMaintenanceDaemon)  
+INFO  Finished cache cleanup, estimated storage used: 0 (FileCacheMaintenanceDaemon)  
+INFO  Headless startup complete (2798 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 60 extension points (19 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\Decompiler\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\Swift\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\PDB\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Processors\DATA\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Processors\8051\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Processors\Atmel\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\BSim\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Debug\Debugger-rmi-trace\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\PyGhidra\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\VersionTracking\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\BytePatterns\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Processors\PIC\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\FileFormats\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\DecompilerDependent\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\MicrosoftCodeAnalyzer\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Processors\JVM\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\GnuDemangler\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\SystemEmulation\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\WildcardAssembler\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\Base\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Debug\Debugger\ghidra_scripts
+    C:\deepseek\fwmap-tool\tools\ghidra_12.2_PUBLIC\Ghidra\Features\FunctionID\ghidra_scripts
+    C:\deepseek\fwmap-tool\ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Creating project: C:\deepseek\fwmap-tool\fwmap-m2\xref-169512\proj\xref (HeadlessAnalyzer)  
+INFO  Creating project: C:\deepseek\fwmap-tool\fwmap-m2\xref-169512\proj\xref (DefaultProject)  
+INFO  REPORT: Processing input files:  (HeadlessAnalyzer)  
+INFO       project: C:\deepseek\fwmap-tool\fwmap-m2\xref-169512\proj\xref (HeadlessAnalyzer)  
+INFO  IMPORTING: file:///C:/deepseek/fwmap-tool/tmp-d615-httpd (HeadlessAnalyzer)  
+INFO  Using Loader: Executable and Linking Format (ELF) (ProgramLoader)  
+INFO  Using Language/Compiler: MIPS:BE:32:default:default (ProgramLoader)  
+INFO  Using Library Search Path: [., C:\WINDOWS\SysWOW64, C:\deepseek\fwmap-tool\tools\jdk-25.0.5+8\bin, C:\WINDOWS\Sun\Java\bin, C:\WINDOWS\system32, C:\WINDOWS, C:\Anaconda, C:\Anaconda\Scripts, C:\Program Files\Java\jdk-17\bin, C:\Program Files\Common Files\Oracle\Java\javapath, C:\Program Files (x86)\Common Files\Oracle\Java\java8path, C:\Program Files (x86)\Common Files\Oracle\Java\javapath, C:\Program Files (x86)\VMware\VMware Workstation\bin\, C:\Windows\system32, C:\Windows, C:\Windows\System32\Wbem, C:\Windows\System32\WindowsPowerShell\v1.0\, C:\Windows\System32\OpenSSH\, C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common, C:\mingw64\bin, C:\Program Files\dotnet\, C:\Program Files\NVIDIA Corporation\NVIDIA app\NvDLISR, C:\WINDOWS\System32\Wbem, C:\WINDOWS\System32\WindowsPowerShell\v1.0\, C:\WINDOWS\System32\OpenSSH\, C:\msys64\ucrt64\bin, C:\Program Files\nodejs\, C:\Program Files\MySQL\MySQL Server 9.4\bin, C:\Program Files\Tailscale\, C:\Anaconda\MinGW\bin, C:\Program Files (x86)\010 Editor, C:\Program Files\Git\cmd, C:\Users\23760\AppData\Local\Programs\Python\Python313\Scripts\, C:\Users\23760\AppData\Local\Programs\Python\Python313\, H:\Scripts\, H:\, C:\Users\23760\AppData\Local\Microsoft\WindowsApps, C:\Users\23760\.dotnet\tools, H:\pythonhh\PyCharm 2024.1.4\bin, C:\Users\23760\AppData\Local\Programs\Microsoft VS Code\bin, C:\IntelliJ IDEA Community Edition 2024.3.2\bin, C:\Users\23760\AppData\Local\GitHubDesktop\bin, Y:\cursor\resources\app\bin, C:\Users\23760\AppData\Roaming\npm, C:\Program Files\Huawei\DevEco Studio\bin, C:\Users\23760\AppData\Local\Programs\Microsoft VS Code\bin\copilot-shim] (ProgramLoader)  
+INFO  Additional info:
+Loading file:///C:/deepseek/fwmap-tool/tmp-d615-httpd?MD5=dbeffa1e2327600ed8abc018da354c75...
+Failed to locate DT_REL in memory at 0x0
+Skipping section [.mdebug.abi32] with invalid size 0x0
+_mips_gp0_value=0x1000b340
+------------------------------------------------
+
+Linking the External Programs of 'tmp-d615-httpd' to imported libraries...
+  [libipv6.so] -> not found in project
+  [libartblock.so] -> not found in project
+  [libnvram.so] -> not found in project
+  [libsutil.so] -> not found in project
+  [libproject.so] -> not found in project
+  [libvct.so] -> not found in project
+  [libgcc_s.so.1] -> not found in project
+  [libc.so.0] -> not found in project
+------------------------------------------------
+
+Resolving External Symbols of [/tmp-d615-httpd] - 133 unresolved symbols, no external libraries configured - skipping
+ (ProgramLoader)  
+INFO  IMPORTING: Loaded 0 additional files (HeadlessAnalyzer)  
+INFO  ANALYZING all memory and code: file:///C:/deepseek/fwmap-tool/tmp-d615-httpd (HeadlessAnalyzer)  
+INFO  Unable to find DWARF information, skipping DWARF analysis (DWARFAnalyzer)  
+INFO  Packed database cache: C:\deepseek\fwmap-tool\fwmap-m2\xref-169512\ghidra-temp\appdata\ghidra\packed-db-cache (PackedDatabaseCache)  
+INFO  Applied data type archive: generic_clib (ApplyDataArchiveAnalyzer)  
+INFO  Applied data type archive: generic_clib (ApplyDataArchiveAnalyzer)  
+INFO  -----------------------------------------------------
+    ASCII Strings                              0.380 secs
+    Apply Data Archives                        0.521 secs
+    Call Convention ID                         0.229 secs
+    Call-Fixup Installer                       0.030 secs
+    Create Address Tables                      0.082 secs
+    Create Address Tables - One Time           0.380 secs
+    Create Function                            0.084 secs
+    DWARF                                      0.002 secs
+    Data Reference                             0.352 secs
+    Decompiler Switch Analysis                26.038 secs
+    Demangler GNU                              0.112 secs
+    Disassemble                                0.352 secs
+    Disassemble Entry Points                   1.003 secs
+    Embedded Media                             0.006 secs
+    External Entry References                  0.002 secs
+    Function ID                                0.126 secs
+    Function Start Search                      0.041 secs
+    GCC Exception Handlers                     0.016 secs
+    MIPS Constant Reference Analyzer           2.917 secs
+    MIPS Symbol                                0.025 secs
+    MIPS UnAlligned Instruction Fix            0.333 secs
+    Non-Returning Functions - Discovered       0.010 secs
+    Non-Returning Functions - Known            0.010 secs
+    Reference                                  0.510 secs
+    Shared Return Calls                        0.068 secs
+    Source Language Support                    0.003 secs
+    Stack                                      1.757 secs
+    Subroutine References                      0.080 secs
+    Subroutine References - One Time           0.001 secs
+    Variadic Function Signature Override      13.012 secs
+-----------------------------------------------------
+     Total Time   48 secs
+-----------------------------------------------------
+ (AutoAnalysisManager)  
+INFO  REPORT: Analysis succeeded for file: file:///C:/deepseek/fwmap-tool/tmp-d615-httpd (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: FindStringRef.java 'graph_id'  (HeadlessAnalyzer)  
+INFO  SCRIPT: C:\deepseek\fwmap-tool\ghidra_scripts\FindStringRef.java (HeadlessAnalyzer)  
+INFO  FindStringRef.java> ==== needle: graph_id ==== (GhidraScript)  
+INFO  FindStringRef.java>   strings-hit=1 functions=0 (GhidraScript)  
+INFO  ANALYZING changes made by post scripts: file:///C:/deepseek/fwmap-tool/tmp-d615-httpd (HeadlessAnalyzer)  
+INFO  REPORT: Post-analysis succeeded for file: file:///C:/deepseek/fwmap-tool/tmp-d615-httpd (HeadlessAnalyzer)  
+INFO  /tmp-d615-httpd: file created (23760) (LocalFileSystem)  
+INFO  REPORT: Save succeeded for: /tmp-d615-httpd (xref:/tmp-d615-httpd) (HeadlessAnalyzer)  
+INFO  REPORT: Import succeeded (HeadlessAnalyzer)  
