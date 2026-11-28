@@ -13,7 +13,7 @@ BUDGET = 4
 CLAIM_FLAGS = ("所有", "均", "证明", "全程", "完整", "无需", "确认", "更省", "节省")
 
 
-def offline_ranker(weights):
+def offline_generator(weights):
     from fwmap.agent.llm import _patch_torch
 
     torch = _patch_torch()
@@ -24,6 +24,23 @@ def offline_ranker(weights):
     model = AutoModelForCausalLM.from_pretrained(weights, local_files_only=True, dtype="auto")
     model.to(device).eval()
 
+    def generate(content, max_new_tokens):
+        prompt = tokenizer.apply_chat_template(
+            [{"role": "user", "content": content}], tokenize=False, add_generation_prompt=True
+        )
+        inputs = tokenizer(prompt, return_tensors="pt", add_special_tokens=False).to(device)
+        with torch.inference_mode():
+            output = model.generate(
+                **inputs, max_new_tokens=max_new_tokens, do_sample=False, pad_token_id=tokenizer.eos_token_id
+            )
+        return tokenizer.decode(output[0, inputs.input_ids.shape[1]:], skip_special_tokens=True).strip()
+
+    return generate, device
+
+
+def offline_ranker(weights):
+    generate, device = offline_generator(weights)
+
     def rank(cards):
         content = (
             "你在复核论文的陈述。将下面所有条目按需要修订或补证的优先级从高到低排列。"
@@ -31,15 +48,7 @@ def offline_ranker(weights):
             "元素只能是各条 ID，每个 ID 出现一次。不要输出解释。\n"
             + json.dumps(cards, ensure_ascii=False)
         )
-        prompt = tokenizer.apply_chat_template(
-            [{"role": "user", "content": content}], tokenize=False, add_generation_prompt=True
-        )
-        inputs = tokenizer(prompt, return_tensors="pt", add_special_tokens=False).to(device)
-        with torch.inference_mode():
-            output = model.generate(
-                **inputs, max_new_tokens=128, do_sample=False, pad_token_id=tokenizer.eos_token_id
-            )
-        return tokenizer.decode(output[0, inputs.input_ids.shape[1]:], skip_special_tokens=True).strip()
+        return generate(content, 128)
 
     return rank, device
 

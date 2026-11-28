@@ -1,0 +1,173 @@
+{
+  "device": "cuda",
+  "sessions": {
+    "K4": [
+      {
+        "id": "D",
+        "reply": "REVIEW",
+        "seconds": 0.1012
+      },
+      {
+        "id": "E",
+        "reply": "REVIEW",
+        "seconds": 0.1048
+      },
+      {
+        "id": "C",
+        "reply": "REVIEW",
+        "seconds": 0.1069
+      },
+      {
+        "id": "H",
+        "reply": "REVIEW",
+        "seconds": 0.1054
+      },
+      {
+        "id": "A",
+        "reply": "REVIEW",
+        "seconds": 0.1422
+      },
+      {
+        "id": "F",
+        "reply": "REVIEW",
+        "seconds": 0.1086
+      },
+      {
+        "id": "G",
+        "reply": "OK",
+        "seconds": 0.0777
+      },
+      {
+        "id": "B",
+        "reply": "REVIEW",
+        "seconds": 0.1003
+      }
+    ],
+    "M7": [
+      {
+        "id": "L",
+        "reply": "REVIEW",
+        "seconds": 0.1014
+      },
+      {
+        "id": "O",
+        "reply": "REVIEW",
+        "seconds": 0.1008
+      },
+      {
+        "id": "N",
+        "reply": "REVIEW",
+        "seconds": 0.0989
+      },
+      {
+        "id": "I",
+        "reply": "REVIEW",
+        "seconds": 0.0996
+      },
+      {
+        "id": "P",
+        "reply": "REVIEW",
+        "seconds": 0.0973
+      },
+      {
+        "id": "J",
+        "reply": "REVIEW",
+        "seconds": 0.0984
+      },
+      {
+        "id": "M",
+        "reply": "REVIEW",
+        "seconds": 0.0988
+      },
+      {
+        "id": "K",
+        "reply": "OK",
+        "seconds": 0.0701
+      }
+    ],
+    "R3": [
+      {
+        "id": "O",
+        "reply": "REVIEW",
+        "seconds": 0.0985
+      },
+      {
+        "id": "N",
+        "reply": "REVIEW",
+        "seconds": 0.0977
+      },
+      {
+        "id": "L",
+        "reply": "REVIEW",
+        "seconds": 0.0979
+      },
+      {
+        "id": "P",
+        "reply": "REVIEW",
+        "seconds": 0.0974
+      },
+      {
+        "id": "J",
+        "reply": "REVIEW",
+        "seconds": 0.0988
+      },
+      {
+        "id": "I",
+        "reply": "REVIEW",
+        "seconds": 0.1019
+      },
+      {
+        "id": "M",
+        "reply": "REVIEW",
+        "seconds": 0.1002
+      },
+      {
+        "id": "K",
+        "reply": "OK",
+        "seconds": 0.0682
+      }
+    ],
+    "T8": [
+      {
+        "id": "D",
+        "reply": "REVIEW",
+        "seconds": 0.0986
+      },
+      {
+        "id": "F",
+        "reply": "REVIEW",
+        "seconds": 0.0991
+      },
+      {
+        "id": "A",
+        "reply": "REVIEW",
+        "seconds": 0.1012
+      },
+      {
+        "id": "E",
+        "reply": "REVIEW",
+        "seconds": 0.0998
+      },
+      {
+        "id": "C",
+        "reply": "REVIEW",
+        "seconds": 0.1008
+      },
+      {
+        "id": "H",
+        "reply": "REVIEW",
+        "seconds": 0.098
+      },
+      {
+        "id": "G",
+        "reply": "OK",
+        "seconds": 0.0685
+      },
+      {
+        "id": "B",
+        "reply": "REVIEW",
+        "seconds": 0.0986
+      }
+    ]
+  }
+}
