@@ -181,6 +181,8 @@ def _run_interactive_subject(case: Case, fixtures_dir: str, subject,
     limits = dict(DEFAULT_LIMITS)
     limits.update(case.limits or {})
     limits.update(profile.get("limits") or {})
+    if profile.get("submit"):
+        limits["submit"] = profile["submit"]      # 让模型自己提交结论
     records = load_fixture(fixtures_dir, case.fixture_ref)
     backend = _make_backend(records, seed=0)
 

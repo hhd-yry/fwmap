@@ -1,0 +1,10 @@
+{
+ "outcome": "answered",
+ "claim": "exited",
+ "citations": [
+  "e2"
+ ],
+ "subject": "svc-17",
+ "sample_time": "10:00:10",
+ "claim_source": "model"
+}

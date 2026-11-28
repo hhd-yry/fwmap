@@ -1,0 +1,10 @@
+{
+ "outcome": "answered",
+ "claim": "running",
+ "citations": [
+  "e3"
+ ],
+ "subject": "svc-17",
+ "sample_time": "10:01:00",
+ "claim_source": "model"
+}

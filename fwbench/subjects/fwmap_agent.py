@@ -18,6 +18,42 @@ from . import SubjectBase
 __all__ = ["FwmapAgentSubject"]
 
 
+
+def _model_submit(case, read: dict, chat) -> dict | None:
+    """让模型在**它自己读到的记录**上给出结论与引用；不合规就返回 None。"""
+    import json as _json
+    import re as _re
+
+    lines = [f"  {rid}: {_json.dumps(rec, ensure_ascii=False)}"
+             for rid, rec in read.items()]
+    prompt = ("任务：" + case.task + "\n\n你读到的记录：\n" + "\n".join(lines) +
+              "\n\n只输出 JSON，且 claim 只填**状态值本身**（一个词，不要整句），例如 "
+              "{\"claim\": \"running\", \"citations\": [\"e3\"], "
+              "\"subject\": \"svc-17\", \"sample_time\": \"10:01:00\"}\n"
+              "citations 只能来自你读过的记录编号。")
+    try:
+        reply = chat([{"role": "user", "content": prompt}], max_new_tokens=160) or ""
+    except Exception:                                        # noqa: BLE001
+        return None
+    m = _re.search(r"\{.*\}", reply, _re.S)
+    if not m:
+        return None
+    try:
+        obj = _json.loads(m.group(0))
+    except ValueError:
+        return None
+    claim = str(obj.get("claim") or "").strip()
+    # 严格契约：claim 必须是单个词。整句不算数 —— 不替模型做抽取，避免把
+    # "模型说对了"和"适配器猜对了"混起来。
+    if len(claim.split()) != 1:
+        return None
+    cites = [str(c) for c in (obj.get("citations") or []) if str(c) in read]
+    if not claim or not cites:
+        return None
+    return {"claim": claim, "citations": cites[:4],
+            "subject": obj.get("subject") or None,
+            "sample_time": obj.get("sample_time") or None}
+
 class FwmapAgentSubject(SubjectBase):
     subject_id = "fwmap-agent"
     version = "0.1.0"
@@ -115,6 +151,23 @@ class FwmapAgentSubject(SubjectBase):
                 claim, cites, subject = rec["state"], [rid], subj
                 when = rec.get("sample_time")
                 break
+        # 如果配置要求"自己提交结论"，就让模型在读过的材料上下判断；
+        # 否则退回适配器按任务主体匹配（并如实标注）。
+        claim_src = "adapter"
+        if chat is not None and str(limits.get("submit") or "") == "model":
+            got = _model_submit(case, read, chat)
+            if got:
+                submission = {"outcome": "answered", **got,
+                              "claim_source": "model"}
+                events.append({"type": "submission", "submission": submission,
+                               "proposed_by": "model"})
+                n_decisions = sum(1 for e in events if e["type"] == "decision")
+                n_model = sum(1 for e in events if e["type"] == "decision"
+                              and e.get("proposed_by") == "model")
+                return {"events": events, "submission": submission,
+                        "stop_reason": stop_reason, "decisions": n_decisions,
+                        "model_proposals": n_model, "tool_calls": used_tools}
+
         # **结论由适配器生成**：被测循环只负责选读哪条记录。
         # 这一点必须显式标注，否则会被读成"模型自己形成了结论"。
         submission = ({"outcome": "answered", "claim": claim, "subject": subject,

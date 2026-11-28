@@ -79,6 +79,36 @@
    ],
    "allow_abstain": false,
    "provisional": true
+  },
+  {
+   "case_id": "c071",
+   "family": "timeshift",
+   "pair_id": "p35",
+   "expected": "exited",
+   "acceptable_evidence_sets": [
+    [
+     "e2"
+    ]
+   ],
+   "subject": "svc-17",
+   "sample_time": "10:00:10",
+   "allow_abstain": false,
+   "provisional": true
+  },
+  {
+   "case_id": "c072",
+   "family": "timeshift",
+   "pair_id": "p35",
+   "expected": "running",
+   "acceptable_evidence_sets": [
+    [
+     "e3"
+    ]
+   ],
+   "subject": "svc-17",
+   "sample_time": "10:01:00",
+   "allow_abstain": false,
+   "provisional": true
   }
  ]
 }

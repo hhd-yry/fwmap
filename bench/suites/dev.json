@@ -158,6 +158,66 @@
     "decisions": 6,
     "tool_calls": 4
    }
+  },
+  {
+   "case_id": "c071",
+   "kind": "interactive",
+   "family": "timeshift",
+   "pair_id": "p35",
+   "task": "根据归档材料，判断实例 svc-17 在 10:00:10 采样时的进程状态；给出支持判断的记录编号。",
+   "catalog": [
+    {
+     "id": "e1",
+     "type": "service_log"
+    },
+    {
+     "id": "e2",
+     "type": "process_sample"
+    },
+    {
+     "id": "e3",
+     "type": "process_sample"
+    },
+    {
+     "id": "e4",
+     "type": "process_sample"
+    }
+   ],
+   "fixture_ref": "fts",
+   "limits": {
+    "decisions": 6,
+    "tool_calls": 4
+   }
+  },
+  {
+   "case_id": "c072",
+   "kind": "interactive",
+   "family": "timeshift",
+   "pair_id": "p35",
+   "task": "根据归档材料，判断实例 svc-17 在 10:01:00 采样时的进程状态；给出支持判断的记录编号。",
+   "catalog": [
+    {
+     "id": "e1",
+     "type": "service_log"
+    },
+    {
+     "id": "e2",
+     "type": "process_sample"
+    },
+    {
+     "id": "e3",
+     "type": "process_sample"
+    },
+    {
+     "id": "e4",
+     "type": "process_sample"
+    }
+   ],
+   "fixture_ref": "fts",
+   "limits": {
+    "decisions": 6,
+    "tool_calls": 4
+   }
   }
  ]
 }

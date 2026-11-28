@@ -1,0 +1,182 @@
+{
+ "run_dir": "C:\\deepseek\\tmp\\dev2-h",
+ "results": [
+  {
+   "case_id": "c017",
+   "family": "lifecycle",
+   "pair_id": "p03",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "exited",
+   "expected": "exited",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e2"
+   ]
+  },
+  {
+   "case_id": "c018",
+   "family": "lifecycle",
+   "pair_id": "p03",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "running",
+   "expected": "running",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e2"
+   ]
+  },
+  {
+   "case_id": "c031",
+   "family": "integrity",
+   "pair_id": "p31",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "complete",
+   "expected": "complete",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e2"
+   ]
+  },
+  {
+   "case_id": "c032",
+   "family": "integrity",
+   "pair_id": "p31",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "truncated",
+   "expected": "truncated",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e2"
+   ]
+  },
+  {
+   "case_id": "c041",
+   "family": "timing",
+   "pair_id": "p32",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "current",
+   "expected": "current",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e2"
+   ]
+  },
+  {
+   "case_id": "c042",
+   "family": "timing",
+   "pair_id": "p32",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "stale",
+   "expected": "stale",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e2"
+   ]
+  },
+  {
+   "case_id": "c071",
+   "family": "timeshift",
+   "pair_id": "p35",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "exited",
+   "expected": "exited",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e2"
+   ]
+  },
+  {
+   "case_id": "c072",
+   "family": "timeshift",
+   "pair_id": "p35",
+   "applicable": true,
+   "passed": false,
+   "failure": "claim_mismatch",
+   "detail": [],
+   "outcome": "answered",
+   "claim": "exited",
+   "expected": "running",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e2"
+   ]
+  }
+ ],
+ "metrics": {
+  "cases": 8,
+  "applicable": 8,
+  "not_run": 0,
+  "passed": 7,
+  "pass_rate": 0.875,
+  "answered": 8,
+  "ungrounded_answered": 1,
+  "ungrounded_rate": 0.125,
+  "pairs": 4,
+  "pairs_both_passed": 3,
+  "pair_rate": 0.75
+ },
+ "manifest": {
+  "schema_version": 1,
+  "bench_version": "0.1.0",
+  "suite": "dev.json",
+  "suite_digest": "19b05d4cfcb4d069",
+  "profile": {
+   "name": "rule",
+   "policy": "rule",
+   "repeats": 1,
+   "limits": {
+    "decisions": 6,
+    "tool_calls": 4
+   },
+   "note": "R：冻结的规则表 —— 优先读 process_sample，再照它作答。规则表只在开发集上写一次。"
+  },
+  "seed": 0,
+  "cases": 8,
+  "subject": null,
+  "notes": "run 落盘成功只表示评测器完成了工作，允许其中存在失败任务"
+ }
+}
