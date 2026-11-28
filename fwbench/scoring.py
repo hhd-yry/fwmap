@@ -1,4 +1,4 @@
-"""独立评分：从已落盘的提交与可见证据算通过标志。
+﻿"""独立评分：从已落盘的提交与可见证据算通过标志。
 
 三条硬约束：
 1. 评分**不调模型**、不读未来事件、不读运行器内存；
@@ -82,6 +82,7 @@ def score_case(case_dir: str, oracle_row: dict) -> dict:
 
     served: set[str] = set()
     contents: dict[str, dict] = {}
+    submitted = False
     if os.path.exists(ev_path):
         with open(ev_path, encoding="utf-8-sig") as fh:
             for line in fh:
@@ -92,6 +93,10 @@ def score_case(case_dir: str, oracle_row: dict) -> dict:
                     ev = json.loads(line)
                 except ValueError:
                     continue
+                # 以**提交事件**为截止点：提交之后才读到的材料不能用来支撑结论
+                if ev.get("type") == "submission":
+                    submitted = True
+                    break
                 if ev.get("type") == "tool_result" and ev.get("ok"):
                     for rid in ev.get("evidence_ids") or []:
                         served.add(rid)
@@ -116,8 +121,10 @@ def score_case(case_dir: str, oracle_row: dict) -> dict:
             detail = [c for c in cites if c not in served]
         elif sub.get("claim") != oracle_row.get("expected"):
             failure = "claim_mismatch"
-        elif not any(_supports(sub, contents.get(c, {})) for c in cites):
+        elif not all(_supports(sub, contents.get(c, {})) for c in cites):
+            # **每一条**引用都要支持主张：夹带无关/矛盾引文也算错引
             failure = "citation_unsupported"
+            detail = [c for c in cites if not _supports(sub, contents.get(c, {}))]
         else:
             allowed = [set(s) for s in oracle_row.get("acceptable_evidence_sets") or []]
             if allowed and not any(s <= set(cites) for s in allowed):

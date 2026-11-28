@@ -1,4 +1,4 @@
-"""把 fwmap 的**生产决策循环**接成被测工具（run_subject 适配器）。
+﻿"""把 fwmap 的**生产决策循环**接成被测工具（run_subject 适配器）。
 
 为什么这样接：`fwmap plan` 的决策函数是 `fwmap.agent.loop._decide(state, chat)`
 ——模型可用就用模型、否则退回 `_heuristic`，返回带 `_source` 的动作。
@@ -115,12 +115,24 @@ class FwmapAgentSubject(SubjectBase):
                 claim, cites, subject = rec["state"], [rid], subj
                 when = rec.get("sample_time")
                 break
+        # **结论由适配器生成**：被测循环只负责选读哪条记录。
+        # 这一点必须显式标注，否则会被读成"模型自己形成了结论"。
         submission = ({"outcome": "answered", "claim": claim, "subject": subject,
-                       "sample_time": when, "citations": cites}
+                       "sample_time": when, "citations": cites,
+                       "claim_source": "adapter"}
                       if claim else
                       {"outcome": "abstained", "claim": None, "subject": None,
-                       "sample_time": None, "citations": []})
+                       "sample_time": None, "citations": [],
+                       "claim_source": "adapter"})
+        events.append({"type": "submission", "submission": submission,
+                       "proposed_by": "adapter",
+                       "note": "结论与引文由适配器按任务主体匹配生成，非模型判断"})
+        # 决策成本按 decision 事件重算，不能用事件总数
+        n_decisions = sum(1 for e in events if e["type"] == "decision")
+        n_model = sum(1 for e in events if e["type"] == "decision"
+                      and e.get("proposed_by") == "model")
         return {"events": events, "submission": submission,
                 "stop_reason": stop_reason,
-                "decisions": min(len(events), limits["decisions"]),
+                "decisions": n_decisions,
+                "model_proposals": n_model,
                 "tool_calls": used_tools}

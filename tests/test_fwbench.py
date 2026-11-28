@@ -84,34 +84,38 @@ def main() -> int:
     ok &= check("双例通过率 1/1", summary["metrics"]["pair_rate"] == 1.0)
 
     # 5) 答对但引错记录 → citation_unsupported（e3 是另一台机器）
-    case_dir = os.path.join(run_dir, "cases", "c017")
-    sub = json.load(open(os.path.join(case_dir, "submission.json"),
-                         encoding="utf-8"))
-    sub["citations"] = ["e3"]
-    # 先读完 e3 再提交，制造"读过但引用不支持"的情形
-    with open(os.path.join(case_dir, "events.jsonl"), "a", encoding="utf-8") as fh:
-        fh.write(json.dumps({"type": "tool_result", "ok": True,
-                             "evidence_ids": ["e3"],
-                             "content": {"subtype": "process_sample",
-                                         "subject": "svc-71",
-                                         "sample_time": "10:00:10",
-                                         "state": "exited"}},
-                            ensure_ascii=False) + "\n")
-    json.dump(sub, open(os.path.join(case_dir, "submission.json"), "w",
-                        encoding="utf-8"), ensure_ascii=False)
-    row = S.score_case(case_dir, oracle["c017"])
+    def _mk(path, reads, cite, claim="exited", subject="svc-17"):
+        os.makedirs(path, exist_ok=True)
+        with open(os.path.join(path, "events.jsonl"), "w", encoding="utf-8") as fh:
+            for rid, content in reads:
+                fh.write(json.dumps({"type": "tool_result", "ok": True,
+                                     "evidence_ids": [rid], "content": content},
+                                    ensure_ascii=False) + "\n")
+            fh.write(json.dumps({"type": "submission"}, ensure_ascii=False) + "\n")
+        json.dump({"outcome": "answered", "claim": claim, "subject": subject,
+                   "sample_time": "10:00:10", "citations": cite},
+                  open(os.path.join(path, "submission.json"), "w",
+                       encoding="utf-8"))
+
+    e2_rec = {"type": "process_sample", "subject": "svc-17",
+              "sample_time": "10:00:10", "state": "exited"}
+    e3_rec = {"type": "process_sample", "subject": "svc-71",
+              "sample_time": "10:00:10", "state": "exited"}
+    e1_rec = {"type": "service_log", "subject": "svc-17",
+              "sample_time": "10:00:09"}
+
+    bad3 = os.path.join(tmp, "bad3")
+    _mk(bad3, [("e2", e2_rec), ("e3", e3_rec)], ["e3"])
+    row = S.score_case(bad3, oracle["c017"])
     ok &= check("引用不支持的记录被判失败",
                 row["failure"] == "citation_unsupported", row)
 
     # 6) 引用本轮从没读过的记录 → citation_not_read
-    sub["citations"] = ["e1"]
-    json.dump(sub, open(os.path.join(case_dir, "submission.json"), "w",
-                        encoding="utf-8"), ensure_ascii=False)
-    # e1 从未被读过（规则先读 e2）
-    row2 = S.score_case(case_dir, oracle["c017"])
+    bad4 = os.path.join(tmp, "bad4")
+    _mk(bad4, [("e2", e2_rec)], ["e1"])
+    row2 = S.score_case(bad4, oracle["c017"])
     ok &= check("引用未读记录被判失败",
                 row2["failure"] == "citation_not_read", row2)
-
     # 7) 重新评分不需要工具、不需要夹具
     moved = os.path.join(tmp, "fixtures-gone")
     shutil.copytree(FIX, moved)
@@ -125,7 +129,7 @@ def main() -> int:
     # 8) 金标换成相反答案 → 旧的运行记录被重判
     flipped = dict(oracle["c017"])
     flipped["expected"] = "running"
-    row3 = S.score_case(case_dir, flipped)
+    row3 = S.score_case(bad4, flipped)
     ok &= check("换金标后旧记录被重判",
                 row3["passed"] is False, row3["failure"])
 
@@ -288,6 +292,98 @@ def main() -> int:
                 all(e.get("proposed_by") in ("model", "heuristic", "rule",
                                               "scripted", "fwmap-agent")
                     for e in decided), decided[:2])
+
+    # 24) 评审反例①：显式指定不支持交互的工具，必须在运行前中止
+    blocked = False
+    try:
+        R.run_suite(os.path.join(BENCH, "suites", "dev.json"), FIX, PROF_RULE,
+                    os.path.join(tmp, "cap"), subject="stdlib")
+    except SystemExit as exc:
+        blocked = "不能跑这些用例" in str(exc)
+    ok &= check("能力不匹配在运行前中止", blocked)
+
+    # 25) 评审反例②：正确引文后面夹带另一对象的记录，必须判错引
+    cd2 = os.path.join(tmp, "wrongcite")
+    os.makedirs(cd2, exist_ok=True)
+    evs = [
+        {"type": "tool_result", "ok": True, "evidence_ids": ["e2"],
+         "content": {"type": "process_sample", "subject": "svc-17",
+                     "sample_time": "10:00:10", "state": "exited"}},
+        {"type": "tool_result", "ok": True, "evidence_ids": ["e3"],
+         "content": {"type": "process_sample", "subject": "svc-71",
+                     "sample_time": "10:00:10", "state": "exited"}},
+        {"type": "submission"},
+    ]
+    with open(os.path.join(cd2, "events.jsonl"), "w", encoding="utf-8") as fh:
+        for e in evs:
+            fh.write(json.dumps(e, ensure_ascii=False) + "\n")
+    json.dump({"outcome": "answered", "claim": "exited", "subject": "svc-17",
+               "sample_time": "10:00:10", "citations": ["e2", "e3"]},
+              open(os.path.join(cd2, "submission.json"), "w", encoding="utf-8"))
+    ok &= check("夹带无关引文判 citation_unsupported",
+                S.score_case(cd2, oracle["c017"])["failure"]
+                == "citation_unsupported")
+
+    # 26) 评审反例②续：提交之后才读到的材料不能支撑结论
+    cd3 = os.path.join(tmp, "latecite")
+    os.makedirs(cd3, exist_ok=True)
+    with open(os.path.join(cd3, "events.jsonl"), "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"type": "tool_result", "ok": True,
+                             "evidence_ids": ["e1"],
+                             "content": {"type": "service_log"}},
+                            ensure_ascii=False) + "\n")
+        fh.write(json.dumps({"type": "submission"}, ensure_ascii=False) + "\n")
+        fh.write(json.dumps({"type": "tool_result", "ok": True,
+                             "evidence_ids": ["e2"],
+                             "content": {"type": "process_sample",
+                                         "subject": "svc-17",
+                                         "sample_time": "10:00:10",
+                                         "state": "exited"}},
+                            ensure_ascii=False) + "\n")
+    json.dump({"outcome": "answered", "claim": "exited", "subject": "svc-17",
+               "sample_time": "10:00:10", "citations": ["e2"]},
+              open(os.path.join(cd3, "submission.json"), "w", encoding="utf-8"))
+    ok &= check("提交后读到的材料不算证据",
+                S.score_case(cd3, oracle["c017"])["failure"] == "citation_not_read")
+
+    # 27) 评审反例③：适配器生成的结论必须标注，决策数按事件重算
+    adir2 = os.path.join(tmp, "agent2")
+    R.run_suite(SUITE, FIX, PROF_RULE, adir2, subject="fwmap-agent")
+    sub2 = json.load(open(os.path.join(adir2, "cases", "c017",
+                                       "submission.json"), encoding="utf-8"))
+    evs2 = [json.loads(l) for l in open(os.path.join(adir2, "cases", "c017",
+                                                     "events.jsonl"),
+                                        encoding="utf-8")]
+    row2 = [r for r in R.run_suite(SUITE, FIX, PROF_RULE,
+                                   os.path.join(tmp, "agent3"),
+                                   subject="fwmap-agent")["rows"]
+            if r["case_id"] == "c017"][0]
+    ok &= check("结论标注为适配器生成", sub2.get("claim_source") == "adapter", sub2)
+    ok &= check("决策数与 decision 事件一致",
+                row2["decisions"] == sum(1 for e in evs2
+                                         if e["type"] == "decision"),
+                (row2["decisions"], len(evs2)))
+
+    # 28) 评审反例④：重复跑每次独立保存，结果不互相覆盖
+    rep = os.path.join(tmp, "rep.json")
+    json.dump({"name": "rule", "policy": "rule", "repeats": 2}, open(rep, "w"))
+    rdir2 = os.path.join(tmp, "rep-run")
+    R.run_suite(SUITE, FIX, rep, rdir2)
+    cdir = os.path.join(rdir2, "cases", "c017")
+    ok &= check("重复轮次各自有目录",
+                os.path.isdir(os.path.join(cdir, "r1"))
+                and os.path.isdir(os.path.join(cdir, "r2")), os.listdir(cdir))
+    lines = [l for l in open(os.path.join(rdir2, "results.jsonl"),
+                             encoding="utf-8") if l.strip()]
+    ok &= check("结果文件保留全部轮次", len(lines) == 4, len(lines))
+
+    # 29) 评审反例④续：配置变了还续跑，必须明确报错
+    bad_resume = False
+    try:
+        R.run_suite(SUITE, FIX, PROF_SCRIPT, rdir2, resume=True)
+    except SystemExit as exc:
+        bad_resume = "策略不同" in str(exc)
+    ok &= check("换策略续跑被拒", bad_resume)
 
     shutil.rmtree(tmp, ignore_errors=True)
     print()

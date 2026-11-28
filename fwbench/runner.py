@@ -31,6 +31,27 @@ def _profile(path: str) -> dict:
     return prof
 
 
+def _case_dir(out_dir: str, case_id: str, repeat: int, repeats: int = 1) -> str:
+    """重复跑时每次一个独立目录，否则后一次会把前一次的事件覆盖掉。"""
+    base = os.path.join(out_dir, "cases", case_id)
+    return base if repeats <= 1 else os.path.join(base, f"r{repeat}")
+
+
+def _check_resume(out_dir: str, suite_digest: str, profile: dict) -> None:
+    """续跑前核对原配置：配置变了却写进旧目录，结果就不可比了。"""
+    path = os.path.join(out_dir, "manifest.json")
+    if not os.path.exists(path):
+        raise SystemExit(f"{out_dir} 没有 manifest.json，不能 --resume")
+    with open(path, encoding="utf-8-sig") as fh:
+        old = json.load(fh)
+    if old.get("suite_digest") != suite_digest:
+        raise SystemExit("续跑失败：套件已变化（suite_digest 不一致），请换输出目录")
+    if (old.get("profile") or {}).get("policy") != (profile or {}).get("policy"):
+        raise SystemExit(
+            "续跑失败：策略不同（原 %r，现 %r），请换输出目录"
+            % ((old.get("profile") or {}).get("policy"), (profile or {}).get("policy")))
+
+
 def _run_one(case: Case, fixtures_dir: str, profile: dict, out_dir: str,
              seed: int, repeat: int) -> dict:
     limits = dict(DEFAULT_LIMITS)
@@ -213,15 +234,33 @@ def run_suite(suite_path: str, fixtures_dir: str, profile_path: str,
         "subject": subject_obj.info() if subject_obj else None,
         "notes": "run 落盘成功只表示评测器完成了工作，允许其中存在失败任务",
     }
+    if resume:
+        _check_resume(out_dir, manifest["suite_digest"], profile)
     with open(os.path.join(out_dir, "manifest.json"), "w",
               encoding="utf-8") as fh:
         json.dump(manifest, fh, ensure_ascii=False, indent=1)
+
+    # 能力前置检查：显式指定了 subject，就必须真的能跑这类用例。
+    # 否则会出现"清单写着 stdlib、实际跑的是内置 rule"这种假满分。
+    if subject_obj is not None:
+        bad = []
+        for c in cases:
+            if c.is_lookup and subject_obj.capability != "elf-meta":
+                bad.append(f"{c.case_id}（lookup，工具能力 {subject_obj.capability}）")
+            elif not c.is_lookup and not getattr(subject_obj, "supports_interactive",
+                                                 False):
+                bad.append(f"{c.case_id}（interactive，工具不支持交互任务）")
+        if bad:
+            raise SystemExit(
+                "被测工具 %s 不能跑这些用例，已在运行前中止：\n  %s\n"
+                "请换 --subject，或用不含这些用例的套件。"
+                % (subject_obj.subject_id, "\n  ".join(bad[:8])))
 
     rows = []
     for case in cases:
         if (getattr(subject_obj, "supports_interactive", False)
                 and not case.is_lookup):
-            case_dir = os.path.join(out_dir, "cases", case.case_id)
+            case_dir = _case_dir(out_dir, case.case_id, 1)
             if resume and os.path.exists(os.path.join(case_dir, "submission.json")):
                 continue
             if os.path.isdir(case_dir):
@@ -231,7 +270,7 @@ def run_suite(suite_path: str, fixtures_dir: str, profile_path: str,
                                                  profile, case_dir))
             continue
         if case.is_lookup and subject_obj is not None:
-            case_dir = os.path.join(out_dir, "cases", case.case_id)
+            case_dir = _case_dir(out_dir, case.case_id, 1)
             if resume and os.path.exists(os.path.join(case_dir, "submission.json")):
                 continue
             if os.path.isdir(case_dir):
@@ -239,8 +278,9 @@ def run_suite(suite_path: str, fixtures_dir: str, profile_path: str,
             os.makedirs(case_dir, exist_ok=True)
             rows.append(_run_lookup(case, fixtures_dir, subject_obj, case_dir))
             continue
-        for repeat in range(1, int(profile.get("repeats", 1)) + 1):
-            case_dir = os.path.join(out_dir, "cases", case.case_id)
+        repeats = int(profile.get("repeats", 1))
+        for repeat in range(1, repeats + 1):
+            case_dir = _case_dir(out_dir, case.case_id, repeat, repeats)
             if resume and os.path.exists(os.path.join(case_dir, "submission.json")):
                 continue
             if os.path.isdir(case_dir):
@@ -249,8 +289,24 @@ def run_suite(suite_path: str, fixtures_dir: str, profile_path: str,
             rows.append(_run_one(case, fixtures_dir, profile, case_dir,
                                  seed, repeat))
 
-    with open(os.path.join(out_dir, "results.jsonl"), "w",
-              encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-    return {"manifest": manifest, "rows": rows}
+    # results.jsonl 用合并而不是覆盖：续跑时不能把已完成的轮次抹掉
+    merged = {}
+    existing = os.path.join(out_dir, "results.jsonl")
+    if os.path.exists(existing):
+        with open(existing, encoding="utf-8-sig") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    old = json.loads(line)
+                except ValueError:
+                    continue
+                merged[(old.get("case_id"), old.get("repeat"),
+                        old.get("policy"))] = old
+    for row in rows:
+        merged[(row["case_id"], row.get("repeat"), row.get("policy"))] = row
+    with open(existing, "w", encoding="utf-8") as fh:
+        for key in sorted(merged, key=lambda k: (str(k[0]), k[1] or 0)):
+            fh.write(json.dumps(merged[key], ensure_ascii=False) + "\n")
+    return {"manifest": manifest, "rows": rows, "all_rows": list(merged.values())}
