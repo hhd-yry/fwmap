@@ -63,16 +63,44 @@ a1: 0x3fd4e158
 **这条要写进论文**：静态工具在 GP 相对寻址的 MIPS 目标上会漏引用，
 必须用动态（gdb）兜底 —— 而动态只花了几分钟就拿到了静态几次都没拿到的答案。
 
-## 五、还没确认的
+## 五、完整调用链（2026-11-28 补完）
 
-1. **`0x3fd407d0` 属于哪个库**：二进制本身在 `0x004xxxxx`，这个地址在共享库映射区，
-   大概率是 `libc.so.0` 的 `strlen`；
-2. **调用者 `ra = 0x3fd39070`** 是谁、为什么传 NULL；
-3. 是 `getenv("QUERY_STRING")` 返回 NULL，还是 `websGetVar` 的容器没初始化 ——
-   需要看调用者附近的代码。
+在 `sscanf` 上加条件断点（`break sscanf if $a0 == 0`），一次命中：
 
-**下一步**：在 gdb 里对 `ra` 下断点、打印栈回溯，或把 `0x3fdxxxxx` 映射回具体库后
-反汇编调用者。这一步做完，报告才能从"崩在 strlen"升级成"handler 第 N 行传了 NULL"。
+```
+Breakpoint 1, sscanf ()
+ra: 0x3fe27db8  →  check_ip_match + 152  in  libproject.so
+a0: 0x0         ← NULL 被当作"要扫描的字符串"传进来
+a1: 0x3fe2a9a0  ← 格式串
+
+0x3fe27da4 <check_ip_match+132>:  move   a0, s1
+0x3fe27da8 <check_ip_match+136>:  addiu  a1, s0, 18848
+0x3fe27dac <check_ip_match+140>:  addiu  a2, sp, 48
+0x3fe27db0 <check_ip_match+144>:  jalr   t9            ← 调 sscanf
+```
+
+**调用链**：
+
+```
+httpd  ──►  libproject.so :: check_ip_match()
+                          └─► sscanf(NULL, "…", …)
+                                └─► vsscanf()
+                                      └─► strlen(NULL)   ← SIGSEGV
+```
+
+**关键发现**：崩的是**动态库 `libproject.so`**，不是 `httpd` 本身。
+
+### 为什么这一条特别重要
+
+`fwmap m2/m3` 只分析主二进制 `sbin/httpd`，而这个缺陷的根因在它加载的
+`libproject.so` 里 —— **只分析主二进制永远找不到它**。这不是工具调参能解决的，
+是分析范围的问题，必须写进论文的局限一节。
+
+### 还没确认的最后一小步
+
+`check_ip_match+132` 的 `move a0, s1`：`s1` 在哪个分支上变成 NULL 的，
+还需要看 `check_ip_match` 开头（`s1` 从哪来，多半是某次 `getenv` 或参数查找）。
+但"谁把 NULL 传给了 sscanf"已经确定，报告可以写到这一级。
 
 ## 六、复现命令
 
