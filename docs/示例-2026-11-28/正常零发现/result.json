@@ -1,0 +1,38 @@
+{
+ "trace": [
+  {
+   "step": 1,
+   "action": "done",
+   "source": "model",
+   "mode": "action",
+   "why": "没有更多可做的"
+  }
+ ],
+ "status": "completed",
+ "stop_reason": "已收工（模型或规则判定没有更多可做的）",
+ "pending": [
+  "pages",
+  "routes",
+  "probe"
+ ],
+ "candidates": [],
+ "probed": {},
+ "handlers": 0,
+ "findings": [],
+ "evidence": {},
+ "stats": {
+  "steps": 1,
+  "model_steps": 1,
+  "rule_steps": 0,
+  "fallback_steps": 0,
+  "model_share": 1.0,
+  "rejects": 0,
+  "reject_kinds": {},
+  "probed": 0,
+  "handlers": 0,
+  "anomalies": [],
+  "verdict_tried": 0,
+  "verdict_accepted": 0,
+  "verdict_accept_rate": null
+ }
+}

@@ -423,6 +423,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="真把候选端点发给固件（要 Linux + qemu-user + rootfs）")
     pl.add_argument("--probe-port", type=int, default=80, help="固件服务端口（默认 80）")
     pl.add_argument("--json", help="把 trace 写到这个文件")
+    pl.add_argument("--out-dir", default="",
+                    help="结果目录（handoff.md 写这里；默认与 --json 同目录）")
     pl.set_defaults(func=lambda a: __import__(
         "fwmap.agent.loop_cli", fromlist=["cmd_plan"]).cmd_plan(a))
 

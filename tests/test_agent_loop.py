@@ -203,7 +203,8 @@ def main() -> int:
 
     r2 = loop._execute({"action": "verdict", "args": {
         "uri": "/crashy", "kind": "crash", "evidence": ["/ghost.cgi 0B"]}}, st)
-    ok &= check("编造的证据被拒", r2["ok"] is False and "编" in r2["detail"], r2)
+    ok &= check("编造的证据被拒",
+                r2["ok"] is False and "没提到" in r2["detail"], r2)
 
     r3 = loop._execute({"action": "verdict", "args": {
         "uri": "/ok.cgi", "kind": "crash", "evidence": ["/ok.cgi 1818B"]}}, st)

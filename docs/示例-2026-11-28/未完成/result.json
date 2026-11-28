@@ -1,0 +1,40 @@
+{
+ "trace": [
+  {
+   "step": 1,
+   "action": "pages",
+   "args": {},
+   "ok": false,
+   "detail": "0 个表单",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "先看固件自带网页"
+  }
+ ],
+ "status": "budget_exhausted",
+ "stop_reason": "预算用尽（1 步）",
+ "pending": [
+  "routes",
+  "probe"
+ ],
+ "candidates": [],
+ "probed": {},
+ "handlers": 0,
+ "findings": [],
+ "evidence": {},
+ "stats": {
+  "steps": 1,
+  "model_steps": 0,
+  "rule_steps": 1,
+  "fallback_steps": 0,
+  "model_share": 0.0,
+  "rejects": 0,
+  "reject_kinds": {},
+  "probed": 0,
+  "handlers": 0,
+  "anomalies": [],
+  "verdict_tried": 0,
+  "verdict_accepted": 0,
+  "verdict_accept_rate": null
+ }
+}

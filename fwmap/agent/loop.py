@@ -227,8 +227,8 @@ def _decide_verdict(state: dict, chat) -> dict | None:
         return None
     ev_lines = obj.get("evidence")
     if not isinstance(ev_lines, list):
-        ev_lines = [f"{obj['uri']} {ev[obj['uri']].get('len')}B "
-                    f"{ev[obj['uri']].get('verdict')}"]
+        # 不替模型补引用：没有就是没有，让校验去拒（旧版在这里替它编了一行）
+        ev_lines = []
     state["last_reject"] = ""
     return {"action": "verdict",
             "args": {"uri": obj["uri"], "kind": obj["kind"],
@@ -512,8 +512,8 @@ def _execute(act: dict, state: dict, *, probe=None, log=print) -> dict:
                 "handlers": hits, "verdicts": verdicts, "evidence": ev}
 
     if name == "verdict":
-        # 模型写结论，规则核证据：引用的必须是实测过的东西，且不能和自己测到的数字打架。
-        # 这一条是"模型取证、规则裁决"的落点 —— 模型可以判断，但不能凭空断言。
+        # 模型写结论，规则核证据：引用必须是**这条对象自己**的实测记录，
+        # 而且引文里的数值要和实测对得上。空引用一律拒绝 —— 没有证据就没有结论。
         uri = str(args.get("uri") or "")
         kind = args.get("kind")
         ev_all = state.get("evidence") or {}
@@ -521,12 +521,20 @@ def _execute(act: dict, state: dict, *, probe=None, log=print) -> dict:
             return {"ok": False, "detail": f"{uri} 没有实测证据，不能下结论"}
         d = ev_all[uri]
 
-        known = set(ev_all)
-        for raw in (args.get("evidence") or []):
-            text = str(raw)
-            if not any(u in text for u in known):
+        cites = [str(x).strip() for x in (args.get("evidence") or [])
+                 if str(x).strip()]
+        if not cites:
+            return {"ok": False,
+                    "detail": "没有引用任何实测记录，不能下结论"}
+        for text in cites:
+            if uri not in text:
                 return {"ok": False,
-                        "detail": f"证据「{text[:40]}」里没有任何一条实测过的 uri，像编的"}
+                        "detail": f"引用「{text[:40]}」没提到 {uri}，"
+                                  "不算这条对象的证据"}
+            ln = d.get("len")
+            if ln not in (None, -1) and str(ln) not in text:
+                return {"ok": False,
+                        "detail": f"引用「{text[:40]}」里的长度与实测 {ln}B 对不上"}
         if kind == "crash" and d.get("len") != 0:
             return {"ok": False,
                     "detail": f"你说是 crash，但 {uri} 返回了 {d.get('len')} 字节"}
@@ -534,12 +542,18 @@ def _execute(act: dict, state: dict, *, probe=None, log=print) -> dict:
             return {"ok": False,
                     "detail": f"你说是 normal，但 {uri} 的裁决是 {d.get('verdict')}"}
 
+        # 证据强度要分开写：只有空响应 = 观测；还要有进程退出的独立记录才算确认。
+        status = str(d.get("status") or "")
+        confirmed = status.startswith(("crash", "killed", "exit", "signal"))
         finding = {"uri": uri, "kind": kind,
                    "why": str(args.get("why") or "")[:200],
-                   "evidence": [str(x) for x in (args.get("evidence") or [])][:6],
+                   "evidence": cites[:6],
+                   "citation_source": "model",
+                   "support": "process-exit" if confirmed else "observed-only",
                    "measured": d}
         state.setdefault("findings", []).append(finding)
-        return {"ok": True, "detail": f"结论已记录：{uri} = {kind}",
+        note = "" if confirmed else "（仅有空响应，未确认进程退出）"
+        return {"ok": True, "detail": f"结论已记录：{uri} = {kind}{note}",
                 "findings": [finding]}
 
     return {"ok": False, "detail": f"未知动作 {name}"}
@@ -576,10 +590,18 @@ def _summarize(state: dict, trace: list[dict]) -> dict:
     v_try = sum(1 for t in trace if t.get("action") == "verdict")
     v_ok = len(state.get("findings") or [])
 
+    # 归因要分开：模型关掉时的规则步是"主动使用规则"，不是"兜底"。
+    heuristic_steps = sum(1 for t in trace if t.get("source") == "heuristic")
+    if state.get("model_enabled"):
+        rule_steps, fallback_steps = 0, heuristic_steps
+    else:
+        rule_steps, fallback_steps = heuristic_steps, 0
+
     return {
         "steps": steps,
         "model_steps": model_steps,
-        "fallback_steps": steps - model_steps,
+        "rule_steps": rule_steps,
+        "fallback_steps": fallback_steps,
         "model_share": round(model_steps / steps, 2) if steps else 0.0,
         "rejects": len(rejects),
         "reject_kinds": kinds,
@@ -588,20 +610,27 @@ def _summarize(state: dict, trace: list[dict]) -> dict:
         "anomalies": anomalies,
         "verdict_tried": v_try,
         "verdict_accepted": v_ok,
-        "verdict_accept_rate": round(v_ok / v_try, 2) if v_try else 0.0,
+        # 一次没试过就没有"采纳率"，显示"不适用"比 0 更诚实
+        "verdict_accept_rate": round(v_ok / v_try, 2) if v_try else None,
     }
 
 
 def run(binary: str, rootfs: str | None = None, *, chat=None, max_steps: int = 8,
-        probe=None, log=print, arch: str = "", anonymize: bool = False) -> dict:
-    """主循环。返回 {trace, ok, steps, routes, handlers, candidates, probed}。"""
+        probe=None, log=print, arch: str = "", anonymize: bool = False,
+        want_probe: bool = False) -> dict:
+    """主循环。返回 {trace, status, stop_reason, pending, handoff, ...}。
+
+    `status` 回答"这次到底做完了没有"，退出码据此决定 —— 有轨迹不等于完成。
+    """
     state = {"binary": binary, "rootfs": rootfs, "arch": arch,
              "routes": 0, "handlers": 0, "history": [], "budget": max_steps,
              "candidates": [], "probed": {}, "cand_meta": {}, "evidence": {},
              "probe_ready": probe is not None, "rejects": [], "last_reject": "",
              "anonymize": anonymize,
+             "model_enabled": chat is not None, "want_probe": want_probe,
              "findings": []}
     trace = []
+    last_sig, stall, stop_reason = None, 0, ""
 
     for i in range(max_steps):
         state["budget"] = max_steps - i
@@ -647,9 +676,56 @@ def run(binary: str, rootfs: str | None = None, *, chat=None, max_steps: int = 8
         trace.append({"step": i + 1, **rec})
         log(f"[loop]   {'✓' if res['ok'] else '·'} {str(res.get('detail'))[:70]}")
 
-    return {"trace": trace, "ok": bool(state["handlers"] or state["routes"]),
-            "steps": len(trace), "routes": state["routes"],
+        # 无进展就停：候选、可审计证据、结论三样都没变，继续烧预算没有意义。
+        sig = (len(state["candidates"]), len(state["evidence"]),
+               len(state.get("findings") or []))
+        stall = stall + 1 if sig == last_sig else 0
+        last_sig = sig
+        if stall >= 3:
+            stop_reason = f"连续 {stall} 步没有新候选 / 新证据 / 新结论"
+            break
+
+    steps = len(trace)
+    if not steps:
+        status = "dependency_missing" if (want_probe and probe is None) else "failed"
+    elif trace[-1].get("action") == "done":
+        status = "completed"
+    elif stop_reason:
+        status = "no_progress"
+    elif want_probe and probe is None:
+        status = "dependency_missing"
+    else:
+        status = "budget_exhausted"
+
+    tried = {h.get("action") for h in state["history"]}
+    pending = [s for s in ("pages", "routes", "probe") if s not in tried]
+    if want_probe and probe is None and "probe" not in pending:
+        pending.append("probe")
+
+    if not stop_reason:
+        stop_reason = {
+            "completed": "已收工（模型或规则判定没有更多可做的）",
+            "budget_exhausted": f"预算用尽（{max_steps} 步）",
+            "dependency_missing": "请求了探针，但本机没有可用的 qemu/chroot",
+            "failed": "一步都没能执行",
+        }.get(status, status)
+
+    stats = _summarize(state, trace)
+    handoff = {
+        "binary": binary, "rootfs": rootfs, "arch": arch,
+        "status": status, "stop_reason": stop_reason,
+        "requested": {"probe": want_probe, "max_steps": max_steps,
+                      "model": "on" if chat is not None else "off",
+                      "anonymize": anonymize},
+        "pending": pending,
+        "findings": state.get("findings") or [],
+        "evidence": state["evidence"],
+        "stats": stats,
+    }
+    return {"trace": trace, "ok": status == "completed",
+            "status": status, "stop_reason": stop_reason, "pending": pending,
+            "steps": steps, "routes": state["routes"],
             "handlers": state["handlers"], "candidates": state["candidates"],
             "probed": state["probed"], "evidence": state["evidence"],
             "findings": state.get("findings") or [], "state": state,
-            "stats": _summarize(state, trace)}
+            "stats": stats, "handoff": handoff}
