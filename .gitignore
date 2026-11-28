@@ -24,3 +24,7 @@ data/nvd/*.sqlite-wal
 .idea/
 .DS_Store
 Thumbs.db
+
+# 实验报告 Word 与截图：截图里能看到实验室虚拟机口令，不进公开仓库
+docs/*.docx
+docs/实验报告-图片/
