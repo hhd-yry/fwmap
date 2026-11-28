@@ -133,17 +133,14 @@ def main() -> int:
     ok &= check("换金标后旧记录被重判",
                 row3["passed"] is False, row3["failure"])
 
-    # 9) 预算：工具调用上限 1 时，脚本策略读不到关键记录
-    tight = os.path.join(tmp, "tight.json")
-    with open(tight, "w", encoding="utf-8") as fh:
-        json.dump({"name": "scripted", "policy": "scripted", "repeats": 1,
-                   "limits": {"decisions": 6, "tool_calls": 1}}, fh)
+    # 9) 预算：用例级 tool_calls=1 时，脚本策略读不到关键记录
+    tight_suite = _copy_suite(tmp, lambda d: [c.__setitem__(
+        "limits", {"decisions": 6, "tool_calls": 1}) for c in d["cases"]])
     tight_run = os.path.join(tmp, "tight-run")
-    R.run_suite(SUITE, FIX, tight, tight_run)
+    R.run_suite(tight_suite, FIX, PROF_SCRIPT, tight_run)
     ts = S.score_run(tight_run, oracle)
-    ok &= check("工具预算收紧后通过率下降",
+    ok &= check("用例预算收紧后通过率下降",
                 ts["metrics"]["passed"] < 2, ts["metrics"])
-
     # 10) 运行目录里没有金标文件
     leaked = [f for _, _, fs in os.walk(run_dir) for f in fs if "oracle" in f]
     ok &= check("运行目录不含金标", not leaked, leaked)
