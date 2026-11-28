@@ -755,7 +755,13 @@ def run(args) -> int:
         return 0 if not chk["error"] else 1
 
     if cmd == "search":
-        idx = Index(find_db(getattr(args, "db", None)))
+        db = find_db(getattr(args, "db", None))
+        if not db or not os.path.exists(db):
+            # 没有库就直说，别甩一段 traceback —— 演示时最怕这个
+            print(f"[!] 没有离线库（找过 {default_dir()}），没法查重。")
+            print("    先跑：python -m fwmap nvd fetch && python -m fwmap nvd build")
+            return 2
+        idx = Index(db)
         try:
             kws = getattr(args, "keywords", None) or []
             for kw in kws:

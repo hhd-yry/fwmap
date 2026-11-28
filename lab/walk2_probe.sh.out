@@ -1,0 +1,49 @@
+########## 一键脚本（三对照 + 3 次触发） ##########
+[sudo] password for ubuntu: == 目标 ==
+rootfs: /home/ubuntu/lab/d615/root
+port:   80
+时间:   2026-11-28 13:52:33
+
+== 对照组 A：正常页面应该活着 ==
+  启动后进程: up
+  GET /index.asp            → 6299 字节  HTTP/1.0 200 Ok  进程=up
+
+== 对照组 B：带 graph_id 应该活着 ==
+  GET /login.cgi?graph_id=1 → 6299 字节  HTTP/1.0 200 Ok  进程=up
+
+== 触发：不带 graph_id ==
+  第 1 次：GET /login.cgi → 0 字节  (空响应)  进程=down
+  第 2 次：GET /login.cgi → 0 字节  (空响应)  进程=down
+  第 3 次：GET /login.cgi → 0 字节  (空响应)  进程=down
+
+== 结论 ==
+  崩溃复现：未认证的 GET /login.cgi 使 Web 服务退出。
+
+证据目录: evidence-20261128-135233
+  summary.txt   —— 上面这些结果
+  httpd.log     —— 服务端输出（含 qemu 的 SIGSEGV 记录）
+
+########## 手工单发：带参数（应该活着） ##########
+  进程状态：down
+
+########## 手工单发：不带参数（应该死） ##########
+  进程状态：down
+
+########## 服务端日志（最后 3 行） ##########
+
+--- stderr ---
+/tmp/walk2_probe.sh: line 13: 12258 Done                    echo ubuntu
+     12259 Killed                  | sudo -S bash -c 'pkill -9 -f "sbin/httpd" 2>/dev/null; sleep 0.5; chroot '"$ROOT"' /sbin/httpd -h /www -p 80 >/tmp/httpd2.log 2>&1 &' 2> /dev/null
+  File "<stdin>", line 10
+    print(f"  收到 {len(d)} 字节；首行：{d.split(b'\r\n')[0].decode('latin-1') if d else '(空)'}")
+                                                                                                          ^
+SyntaxError: f-string expression part cannot include a backslash
+Traceback (most recent call last):
+  File "<stdin>", line 2, in <module>
+  File "/usr/lib/python3.10/socket.py", line 845, in create_connection
+    raise err
+  File "/usr/lib/python3.10/socket.py", line 833, in create_connection
+    sock.connect(sa)
+ConnectionRefusedError: [Errno 111] Connection refused
+/tmp/walk2_probe.sh: line 42: 12271 Done                    echo ubuntu
+     12272 Killed                  | sudo -S pkill -9 -f 'sbin/httpd' 2> /dev/null

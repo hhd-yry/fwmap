@@ -1,0 +1,29 @@
+[sudo] password for ubuntu: [discover] 用上次的结论：page_derived（跳过模型）
+[discover] 经验排序：page_derived → strings_goform → strcmp_chain …
+[discover] 第 1 轮：page_derived（置信 1.00） —— 上次在这台固件上验收通过（2026-11-25 09:12）
+[discover]   抽出 104 条（104 个表单）
+[discover] 本次没有拿到验收结果（服务没应答/没 qemu），不计入机制成功率
+
+机制：page_derived（置信 1.00）
+路由：104 条
+  /apply.cgi                                   html_response_page, html_response_message, html_response_return_page, mac_clone_addr
+  /apply.cgi                                   html_response_page, html_response_return_page, reboot_type, asp_temp_15
+  /apply.cgi                                   html_response_page, html_response_message, html_response_return_page, syslog_server
+  /apply.cgi                                   html_response_page, html_response_message, html_response_return_page, reboot_type
+  /apply.cgi                                   html_response_page, html_response_message, html_response_return_page, ipv6_autoconfig
+  /apply.cgi                                   html_response_page, html_response_return_page, reboot_type, asp_temp_43
+  /online_firmware_check.cgi                   html_response_page, html_response_return_page
+  /apply.cgi                                   html_response_page, html_response_message, html_response_return_page, log_system_activity
+  /apply.cgi                                   html_response_page, html_response_message, html_response_return_page, total_log
+  /log_first_page.cgi                          html_response_page, html_response_return_page
+  /log_last_page.cgi                           html_response_page, html_response_return_page
+  /log_next_page.cgi                           html_response_page, html_response_return_page
+  /log_previous_page.cgi                       html_response_page, html_response_return_page
+  /log_clear_page.cgi                          html_response_page, html_response_return_page
+  /save_log.cgi                                html_response_page, html_response_message, html_response_return_page
+  /send_log_email.cgi                          html_response_page, html_response_return_page
+  /apply.cgi                                   html_response_page, html_response_message, html_response_return_page, log_email_schedule
+  /apply.cgi                                   html_response_page, html_response_message, html_response_return_page, reboot_type
+  /apply.cgi                                   html_response_page, html_response_message, html_response_return_page, ipv6_autoconfig
+  /ping_response.cgi                           html_response_page, html_response_return_page, ping_ipaddr, ping
+  …… 还有 84 条
