@@ -1,0 +1,8 @@
+{
+ "id": "e1",
+ "type": "service_log",
+ "subject": "img-3",
+ "sample_time": "10:00:09",
+ "message": "img-3 的校验任务在 10:00:09 启动过",
+ "source": "业务日志"
+}

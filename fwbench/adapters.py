@@ -1,4 +1,4 @@
-"""适配器：只读工具后端 + 被测策略（rule / scripted）。
+﻿"""适配器：只读工具后端 + 被测策略（rule / scripted）。
 
 关键约束（来自实施计划）：
 
@@ -112,7 +112,7 @@ class RulePolicy(_Policy):
 
     name = "rule"
     uses_model = False
-    PREFERRED_TYPE = "process_sample"
+    WEAK_TYPE = "service_log"          # 只发日志、不能单独支撑结论的那种
 
     def __init__(self):
         self._phase = "read"
@@ -125,7 +125,7 @@ class RulePolicy(_Policy):
         if budget_left["tool_calls"] > 0:
             for item in self.case.catalog:
                 rid = item["id"]
-                if item.get("type") == self.PREFERRED_TYPE and rid not in self.read:
+                if item.get("type") != self.WEAK_TYPE and rid not in self.read:
                     return {"type": "read", "tool": "read_record", "id": rid}
             nxt = self.backend.next_unread()
             if nxt:
@@ -136,7 +136,7 @@ class RulePolicy(_Policy):
         """任务描述里出现了哪台机器，就以那台的记录为准。"""
         task = self.case.task
         for rec in self.read.values():
-            if rec.get("type") != self.PREFERRED_TYPE:
+            if rec.get("type") == self.WEAK_TYPE:
                 continue
             subject = str(rec.get("subject") or "")
             if subject and subject in task and rec.get("state"):
@@ -146,7 +146,7 @@ class RulePolicy(_Policy):
     def _submit(self) -> dict:
         task = self.case.task
         for rid, rec in self.read.items():
-            if rec.get("type") != "process_sample" or not rec.get("state"):
+            if rec.get("type") == self.WEAK_TYPE or not rec.get("state"):
                 continue
             subject = str(rec.get("subject") or "")
             if subject and subject in task:

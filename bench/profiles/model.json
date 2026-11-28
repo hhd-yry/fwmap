@@ -1,0 +1,9 @@
+{
+ "name": "model",
+ "policy": "model",
+ "chat": "local",
+ "temperature": 0.0,
+ "repeats": 1,
+ "limits": {"decisions": 6, "tool_calls": 4},
+ "note": "M：fwmap-agent + 本项目模型客户端（fwmap.agent.llm）。模型可提议，规则可兜底；每步记录 proposed_by。"
+}

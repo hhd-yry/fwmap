@@ -1,0 +1,58 @@
+{
+ "schema_version": 1,
+ "note": "金标只在评分阶段加载；全部标记 provisional",
+ "cases": [
+  {
+   "case_id": "c051",
+   "family": "version",
+   "pair_id": "p33",
+   "expected": "v2.5.12",
+   "acceptable_evidence_sets": [
+    [
+     "e2"
+    ]
+   ],
+   "allow_abstain": false,
+   "provisional": true
+  },
+  {
+   "case_id": "c052",
+   "family": "version",
+   "pair_id": "p33",
+   "expected": "v3.03",
+   "acceptable_evidence_sets": [
+    [
+     "e2"
+    ]
+   ],
+   "allow_abstain": false,
+   "provisional": true
+  },
+  {
+   "case_id": "c061",
+   "family": "availability",
+   "pair_id": "p34",
+   "expected": "present",
+   "acceptable_evidence_sets": [
+    [
+     "e2"
+    ]
+   ],
+   "allow_abstain": false,
+   "provisional": true
+  },
+  {
+   "case_id": "c062",
+   "family": "availability",
+   "pair_id": "p34",
+   "expected": "missing",
+   "acceptable_evidence_sets": [
+    [
+     "e2"
+    ]
+   ],
+   "allow_abstain": false,
+   "provisional": true
+  }
+ ]
+}

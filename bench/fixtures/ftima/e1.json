@@ -1,0 +1,8 @@
+{
+ "id": "e1",
+ "type": "service_log",
+ "subject": "run-12",
+ "sample_time": "10:00:09",
+ "message": "run-12 在 10:00:09 输出过一条普通消息",
+ "source": "业务日志"
+}

@@ -1,0 +1,84 @@
+{
+ "schema_version": 1,
+ "note": "金标只在评分阶段加载；全部标记 provisional",
+ "cases": [
+  {
+   "case_id": "c017",
+   "family": "lifecycle",
+   "pair_id": "p03",
+   "expected": "exited",
+   "acceptable_evidence_sets": [
+    [
+     "e2"
+    ]
+   ],
+   "allow_abstain": false,
+   "provisional": true
+  },
+  {
+   "case_id": "c018",
+   "family": "lifecycle",
+   "pair_id": "p03",
+   "expected": "running",
+   "acceptable_evidence_sets": [
+    [
+     "e2"
+    ]
+   ],
+   "allow_abstain": false,
+   "provisional": true
+  },
+  {
+   "case_id": "c031",
+   "family": "integrity",
+   "pair_id": "p31",
+   "expected": "complete",
+   "acceptable_evidence_sets": [
+    [
+     "e2"
+    ]
+   ],
+   "allow_abstain": false,
+   "provisional": true
+  },
+  {
+   "case_id": "c032",
+   "family": "integrity",
+   "pair_id": "p31",
+   "expected": "truncated",
+   "acceptable_evidence_sets": [
+    [
+     "e2"
+    ]
+   ],
+   "allow_abstain": false,
+   "provisional": true
+  },
+  {
+   "case_id": "c041",
+   "family": "timing",
+   "pair_id": "p32",
+   "expected": "current",
+   "acceptable_evidence_sets": [
+    [
+     "e2"
+    ]
+   ],
+   "allow_abstain": false,
+   "provisional": true
+  },
+  {
+   "case_id": "c042",
+   "family": "timing",
+   "pair_id": "p32",
+   "expected": "stale",
+   "acceptable_evidence_sets": [
+    [
+     "e2"
+    ]
+   ],
+   "allow_abstain": false,
+   "provisional": true
+  }
+ ]
+}

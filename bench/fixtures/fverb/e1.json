@@ -1,0 +1,8 @@
+{
+ "id": "e1",
+ "type": "service_log",
+ "subject": "fw-main",
+ "sample_time": "10:00:09",
+ "message": "fw-main 的文件名在两份清单里都出现过",
+ "source": "业务日志"
+}

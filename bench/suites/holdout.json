@@ -1,0 +1,111 @@
+{
+ "schema_version": 1,
+ "name": "holdout",
+ "description": "holdout 套件：配对双例，两例只差一条记录的取值",
+ "cases": [
+  {
+   "case_id": "c051",
+   "kind": "interactive",
+   "family": "version",
+   "pair_id": "p33",
+   "task": "根据归档材料，确定 fw-main 对应的版本；给出支持判断的记录编号。",
+   "catalog": [
+    {
+     "id": "e1",
+     "type": "service_log"
+    },
+    {
+     "id": "e2",
+     "type": "inventory"
+    },
+    {
+     "id": "e3",
+     "type": "inventory"
+    }
+   ],
+   "fixture_ref": "fvera",
+   "limits": {
+    "decisions": 6,
+    "tool_calls": 4
+   }
+  },
+  {
+   "case_id": "c052",
+   "kind": "interactive",
+   "family": "version",
+   "pair_id": "p33",
+   "task": "根据归档材料，确定 fw-main 对应的版本；给出支持判断的记录编号。",
+   "catalog": [
+    {
+     "id": "e1",
+     "type": "service_log"
+    },
+    {
+     "id": "e2",
+     "type": "inventory"
+    },
+    {
+     "id": "e3",
+     "type": "inventory"
+    }
+   ],
+   "fixture_ref": "fverb",
+   "limits": {
+    "decisions": 6,
+    "tool_calls": 4
+   }
+  },
+  {
+   "case_id": "c061",
+   "kind": "interactive",
+   "family": "availability",
+   "pair_id": "p34",
+   "task": "根据归档材料，判断 img-3 的验收材料是否齐全；给出支持判断的记录编号。",
+   "catalog": [
+    {
+     "id": "e1",
+     "type": "service_log"
+    },
+    {
+     "id": "e2",
+     "type": "verification"
+    },
+    {
+     "id": "e3",
+     "type": "verification"
+    }
+   ],
+   "fixture_ref": "favaa",
+   "limits": {
+    "decisions": 6,
+    "tool_calls": 4
+   }
+  },
+  {
+   "case_id": "c062",
+   "kind": "interactive",
+   "family": "availability",
+   "pair_id": "p34",
+   "task": "根据归档材料，判断 img-3 的验收材料是否齐全；给出支持判断的记录编号。",
+   "catalog": [
+    {
+     "id": "e1",
+     "type": "service_log"
+    },
+    {
+     "id": "e2",
+     "type": "verification"
+    },
+    {
+     "id": "e3",
+     "type": "verification"
+    }
+   ],
+   "fixture_ref": "favab",
+   "limits": {
+    "decisions": 6,
+    "tool_calls": 4
+   }
+  }
+ ]
+}

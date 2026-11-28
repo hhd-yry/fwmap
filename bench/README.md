@@ -1,4 +1,4 @@
-# fwbench —— fwmap 的端到端交互能力评测器
+﻿# fwbench —— fwmap 的端到端交互能力评测器
 
 回答问题：**fwmap 的模块能否产出正确结果？模块组合后证据能否传到报告？
 允许模型参与决策，哪些任务更好、哪些更差、代价多少？**
@@ -105,6 +105,37 @@ python -m fwbench compare runs/elf-fwmap runs/elf-stdlib \
 
 `elfmeta` 三例：大端 MIPS/exec、小端 ARM/dyn、截断 30 字节（应报 `truncated`）。
 
+
+## 三组策略与两套用例
+
+| 组 | 命令 | 说明 |
+|---|---|---|
+| **H** 基线 | `--profile bench/profiles/rule.json` | 冻结规则：按记录类型挑材料，跳过纯日志 |
+| **S** 冒烟 | `--profile bench/profiles/scripted.json` | 固定序列，只验证管线，**不代表能力** |
+| **M** 模型 | `--subject fwmap-agent --profile bench/profiles/model.json` | 走 fwmap 生产决策 `loop._decide`，模型提议、规则可兜底 |
+
+```bash
+# 开发集（3 对：运行状态 / 制品完整性 / 时序归属）
+python -m fwbench run --suite bench/suites/dev.json \
+    --profile bench/profiles/rule.json --out runs/dev-h
+
+# 留出集（2 对：版本识别 / 证据可得性）—— 开发中不跑，阶段末跑一次
+python -m fwbench run --suite bench/suites/holdout.json \
+    --profile bench/profiles/rule.json --out runs/holdout-h
+
+# 模型组（需要模型服务；M 组每步约 20 秒）
+set FWMAP_LLM_ENDPOINT=http://127.0.0.1:11434/v1
+python -m fwbench run --suite bench/suites/dev.json --subject fwmap-agent \
+    --profile bench/profiles/model.json --only c017,c018 --out runs/dev-m
+```
+
+`--only c017,c018` 只跑指定用例（控制模型成本用）。
+
+## 归档复算（第 7 节 #1–#4）
+
+```bash
+python -m fwbench archive lab/recordings --expect 5,5,0
+```
 ## 增加用例
 
 1. 在 `bench/fixtures/<ref>/` 放记录 JSON，形如

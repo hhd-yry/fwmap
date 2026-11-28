@@ -1,4 +1,4 @@
-"""执行：预算、超时、断点续跑，落盘 manifest / events / submission。
+﻿"""执行：预算、超时、断点续跑，落盘 manifest / events / submission。
 
 硬规矩：
 * `run` 落盘成功只表示**评测器**完成了工作，允许里面有失败任务；
@@ -140,6 +140,20 @@ def _run_lookup(case: Case, fixtures_dir: str, subject, out_dir: str) -> dict:
             "served": [], "submission": sub}
 
 
+def _chat_for(profile: dict):
+    """profile 里写 `"chat": "local"` 时，用项目自己的模型客户端。"""
+    if str(profile.get("chat") or "").lower() not in ("local", "1", "true"):
+        return None
+    from fwmap.agent import llm
+
+    temp = float(profile.get("temperature", 0.0) or 0.0)
+
+    def chat(messages, **kw):
+        kw["temperature"] = temp
+        return llm.chat(messages, **kw)
+    return chat
+
+
 def _run_interactive_subject(case: Case, fixtures_dir: str, subject,
                              profile: dict, out_dir: str) -> dict:
     """C 层：由被测工具自己的决策循环跑一遍，事件原样落盘。"""
@@ -150,7 +164,8 @@ def _run_interactive_subject(case: Case, fixtures_dir: str, subject,
     backend = _make_backend(records, seed=0)
 
     run_id = f"{case.case_id}-{subject.subject_id}"
-    out = subject.run_interactive(case, backend, limits, chat=None)
+    out = subject.run_interactive(case, backend, limits,
+                                  chat=_chat_for(profile))
 
     log = EventLog(os.path.join(out_dir, "events.jsonl"), run_id=run_id,
                    case_id=case.case_id, repeat=1)
@@ -172,8 +187,10 @@ def _run_interactive_subject(case: Case, fixtures_dir: str, subject,
 
 def run_suite(suite_path: str, fixtures_dir: str, profile_path: str,
               out_dir: str, seed: int = 0, resume: bool = False,
-              subject: str | None = None) -> dict:
+              subject: str | None = None, only: list[str] | None = None) -> dict:
     cases = load_suite(suite_path)
+    if only:
+        cases = [c for c in cases if c.case_id in set(only)]
     profile = _profile(profile_path)
     subject_obj = None
     if subject:

@@ -1,0 +1,8 @@
+{
+ "id": "e2",
+ "type": "artifact_check",
+ "subject": "pkg-7",
+ "sample_time": "10:00:10",
+ "state": "complete",
+ "source": "权威记录"
+}

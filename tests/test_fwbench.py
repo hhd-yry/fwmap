@@ -1,4 +1,4 @@
-"""fwbench 自身的测试：验证评测器，不是验证 fwmap。
+﻿"""fwbench 自身的测试：验证评测器，不是验证 fwmap。
 
 对应实施计划第 7 节的验收点：
   · 用例校验能挡住"答案写进 id"
@@ -259,6 +259,35 @@ def main() -> int:
         os.path.join(adir, "cases", "c017", "events.jsonl"), encoding="utf-8")]
     ok &= check("事件记录决策来源",
                 any(e.get("proposed_by") == "heuristic" for e in evs), evs[:2])
+
+
+    # 21) P3：冻结基线在两套里都要全过（H）
+    for name, planned in (("dev", 6), ("holdout", 4)):
+        sdir = os.path.join(tmp, f"h-{name}")
+        R.run_suite(os.path.join(BENCH, "suites", f"{name}.json"), FIX,
+                    PROF_RULE, sdir)
+        sm = S.score_run(sdir, C.load_oracle(
+            os.path.join(BENCH, "oracle", f"{name}.json")))
+        ok &= check(f"基线 H 在 {name} 全过（{planned} 例）",
+                    sm["metrics"]["passed"] == planned, sm["metrics"])
+
+    # 22) --only 只跑指定用例
+    odir = os.path.join(tmp, "only")
+    R.run_suite(os.path.join(BENCH, "suites", "dev.json"), FIX, PROF_RULE,
+                odir, only=["c031"])
+    ok &= check("--only 只落指定用例",
+                os.listdir(os.path.join(odir, "cases")) == ["c031"],
+                os.listdir(os.path.join(odir, "cases")))
+
+    # 23) 逐步归属字段齐全（无模型时全是 heuristic）
+    evs2 = [json.loads(l) for l in open(os.path.join(odir, "cases", "c031",
+                                                    "events.jsonl"),
+                                        encoding="utf-8")]
+    decided = [e for e in evs2 if e["type"] == "decision"]
+    ok &= check("每条决策都有 proposed_by",
+                all(e.get("proposed_by") in ("model", "heuristic", "rule",
+                                              "scripted", "fwmap-agent")
+                    for e in decided), decided[:2])
 
     shutil.rmtree(tmp, ignore_errors=True)
     print()

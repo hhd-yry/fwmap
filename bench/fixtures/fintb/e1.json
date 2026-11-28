@@ -1,0 +1,8 @@
+{
+ "id": "e1",
+ "type": "service_log",
+ "subject": "pkg-7",
+ "sample_time": "10:00:09",
+ "message": "pkg-7 的打包任务在 10:00:09 报过一次重试",
+ "source": "业务日志"
+}

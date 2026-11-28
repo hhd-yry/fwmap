@@ -1,4 +1,4 @@
-"""fwbench 命令入口。
+﻿"""fwbench 命令入口。
 
     python -m fwbench validate --suite bench/suites/smoke.json
     python -m fwbench run --suite ... --profile bench/profiles/rule.json --out runs/smoke-rule
@@ -61,7 +61,8 @@ def cmd_run(args) -> int:
     suite, fixtures, _ = _paths(args)
     profile = args.profile or os.path.join(BENCH, "profiles", "rule.json")
     res = run_suite(suite, fixtures, profile, args.out, seed=args.seed,
-                    resume=args.resume, subject=getattr(args, "subject", None))
+                    resume=args.resume, subject=getattr(args, "subject", None),
+                    only=[x for x in (getattr(args, "only", "") or "").split(",") if x])
     print(f"[+] {len(res['rows'])} 个用例已落盘：{args.out}")
     return 0
 
@@ -194,7 +195,8 @@ def main(argv=None) -> int:
     r.add_argument("--seed", type=int, default=0)
     r.add_argument("--resume", action="store_true")
     r.add_argument("--subject", default=None,
-                   help="被测工具：fwmap / stdlib / elftools（lookup 用例用）")
+                   help="被测工具：fwmap / stdlib / elftools / fwmap-agent")
+    r.add_argument("--only", default="", help="只跑这些用例，逗号分隔")
     r.set_defaults(func=cmd_run)
 
     rp = sub.add_parser("report", help="重新评分并渲染报告")
