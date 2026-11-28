@@ -1,0 +1,204 @@
+{
+ "trace": [
+  {
+   "step": 1,
+   "action": "pages",
+   "args": {},
+   "ok": true,
+   "detail": "104 个表单",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 url（它只认 这个动作不收参数））"
+  },
+  {
+   "step": 2,
+   "action": "routes",
+   "args": {
+    "mechanism": "strings_goform"
+   },
+   "ok": false,
+   "detail": "0 个路径",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 path（它只认 这个动作不收参数））"
+  },
+  {
+   "step": 3,
+   "action": "probe",
+   "args": {
+    "uri": "/apply.cgi"
+   },
+   "ok": true,
+   "detail": "/apply.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "感觉这个名称比较常见，容易被识别"
+  },
+  {
+   "step": 4,
+   "action": "probe",
+   "args": {
+    "uri": "/online_firmware_check.cgi"
+   },
+   "ok": true,
+   "detail": "/online_firmware_check.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "直觉上第一个可用的端点"
+  },
+  {
+   "step": 5,
+   "action": "probe",
+   "args": {
+    "uri": "/log_first_page.cgi"
+   },
+   "ok": true,
+   "detail": "/log_first_page.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "根据直觉，这个编号最可能是一个有效的端点路径，因为它没有被隐藏并且在列表中是连续的数字。"
+  },
+  {
+   "step": 6,
+   "action": "probe",
+   "args": {
+    "uri": "/log_last_page.cgi"
+   },
+   "ok": true,
+   "detail": "/log_last_page.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "没有看到名字，直接选择第一个"
+  },
+  {
+   "step": 7,
+   "action": "probe",
+   "args": {
+    "uri": "/log_next_page.cgi"
+   },
+   "ok": true,
+   "detail": "/log_next_page.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "因为这个编号在名称上是第一个字母是 'S' 的，符合我的直觉。"
+  },
+  {
+   "step": 8,
+   "action": "probe",
+   "args": {
+    "uri": "/log_previous_page.cgi"
+   },
+   "ok": true,
+   "detail": "/log_previous_page.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "固件需要特定的设备类型和配置来支持这个端点"
+  }
+ ],
+ "status": "budget_exhausted",
+ "stop_reason": "预算用尽（8 步）",
+ "pending": [],
+ "candidates": [
+  "/apply.cgi",
+  "/online_firmware_check.cgi",
+  "/log_first_page.cgi",
+  "/log_last_page.cgi",
+  "/log_next_page.cgi",
+  "/log_previous_page.cgi",
+  "/log_clear_page.cgi",
+  "/save_log.cgi",
+  "/send_log_email.cgi",
+  "/ping_response.cgi",
+  "/ping6_response.cgi",
+  "/restart.cgi",
+  "/dhcp_revoke.cgi",
+  "/login.cgi",
+  "/relogin_auth.cgi",
+  "/set_sta_enrollee_pin.cgi",
+  "/st_device.cgi",
+  "/dhcp_renew.cgi",
+  "/dhcp_release.cgi",
+  "/pppoe_00_connect.cgi",
+  "/pppoe_00_disconnect.cgi",
+  "/pptp_connect.cgi",
+  "/pptp_disconnect.cgi",
+  "/l2tp_connect.cgi",
+  "/l2tp_disconnect.cgi",
+  "/bigpond_connect.cgi",
+  "/bigpond_disconnect.cgi",
+  "/firmware_upgrade.cgi",
+  "/save_configuration.cgi",
+  "/upload_configuration.cgi",
+  "/restore_default.cgi",
+  "/reboot.cgi",
+  "/reset_ifconfig_packet_counter.cgi",
+  "/ipv6_pppoe_connect.cgi",
+  "/ipv6_pppoe_disconnect.cgi",
+  "/system_time.cgi"
+ ],
+ "probed": {
+  "/apply.cgi": "handler",
+  "/online_firmware_check.cgi": "handler",
+  "/log_first_page.cgi": "handler",
+  "/log_last_page.cgi": "handler",
+  "/log_next_page.cgi": "handler",
+  "/log_previous_page.cgi": "handler"
+ },
+ "handlers": 6,
+ "findings": [],
+ "evidence": {
+  "/apply.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/online_firmware_check.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/log_first_page.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/log_last_page.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/log_next_page.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/log_previous_page.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  }
+ },
+ "stats": {
+  "steps": 8,
+  "model_steps": 6,
+  "rule_steps": 0,
+  "fallback_steps": 2,
+  "model_share": 0.75,
+  "rejects": 2,
+  "reject_kinds": {
+   "多余参数": 2
+  },
+  "probed": 6,
+  "handlers": 6,
+  "anomalies": [],
+  "verdict_tried": 0,
+  "verdict_accepted": 0,
+  "verdict_accept_rate": null
+ }
+}

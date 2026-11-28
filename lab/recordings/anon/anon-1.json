@@ -1,0 +1,205 @@
+{
+ "trace": [
+  {
+   "step": 1,
+   "action": "probe",
+   "args": {
+    "uri": "/admin/login"
+   },
+   "ok": false,
+   "detail": "/admin/login→not-found",
+   "source": "model",
+   "mode": "action",
+   "why": "这个URI是管理员登录的入口点，通常用于安全检查和认证。"
+  },
+  {
+   "step": 2,
+   "action": "pages",
+   "args": {},
+   "ok": true,
+   "detail": "104 个表单",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "这几条都试过了，换没试过的"
+  },
+  {
+   "step": 3,
+   "action": "routes",
+   "args": {
+    "mechanism": "strings_goform"
+   },
+   "ok": false,
+   "detail": "0 个路径",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（缺参数 mechanism）"
+  },
+  {
+   "step": 4,
+   "action": "probe",
+   "args": {
+    "uri": "/apply.cgi"
+   },
+   "ok": true,
+   "detail": "/apply.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "感觉这是个空闲的槽位"
+  },
+  {
+   "step": 5,
+   "action": "probe",
+   "args": {
+    "uri": "/online_firmware_check.cgi"
+   },
+   "ok": true,
+   "detail": "/online_firmware_check.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "固件内部的逻辑可能基于某个特定的编号来决定使用哪个端点"
+  },
+  {
+   "step": 6,
+   "action": "probe",
+   "args": {
+    "uri": "/log_first_page.cgi"
+   },
+   "ok": true,
+   "detail": "/log_first_page.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "这个编号是固件中第一个被发现的端点"
+  },
+  {
+   "step": 7,
+   "action": "probe",
+   "args": {
+    "uri": "/log_last_page.cgi"
+   },
+   "ok": true,
+   "detail": "/log_last_page.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "根据直觉，选择编号为 01 的端点，因为它是固件中唯一未命名的端点。"
+  },
+  {
+   "step": 8,
+   "action": "probe",
+   "args": {
+    "uri": "/log_next_page.cgi"
+   },
+   "ok": true,
+   "detail": "/log_next_page.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "基于直觉，第一个编号通常表示第一个可用的端点"
+  }
+ ],
+ "status": "budget_exhausted",
+ "stop_reason": "预算用尽（8 步）",
+ "pending": [],
+ "candidates": [
+  "/apply.cgi",
+  "/online_firmware_check.cgi",
+  "/log_first_page.cgi",
+  "/log_last_page.cgi",
+  "/log_next_page.cgi",
+  "/log_previous_page.cgi",
+  "/log_clear_page.cgi",
+  "/save_log.cgi",
+  "/send_log_email.cgi",
+  "/ping_response.cgi",
+  "/ping6_response.cgi",
+  "/restart.cgi",
+  "/dhcp_revoke.cgi",
+  "/login.cgi",
+  "/relogin_auth.cgi",
+  "/set_sta_enrollee_pin.cgi",
+  "/st_device.cgi",
+  "/dhcp_renew.cgi",
+  "/dhcp_release.cgi",
+  "/pppoe_00_connect.cgi",
+  "/pppoe_00_disconnect.cgi",
+  "/pptp_connect.cgi",
+  "/pptp_disconnect.cgi",
+  "/l2tp_connect.cgi",
+  "/l2tp_disconnect.cgi",
+  "/bigpond_connect.cgi",
+  "/bigpond_disconnect.cgi",
+  "/firmware_upgrade.cgi",
+  "/save_configuration.cgi",
+  "/upload_configuration.cgi",
+  "/restore_default.cgi",
+  "/reboot.cgi",
+  "/reset_ifconfig_packet_counter.cgi",
+  "/ipv6_pppoe_connect.cgi",
+  "/ipv6_pppoe_disconnect.cgi",
+  "/system_time.cgi"
+ ],
+ "probed": {
+  "/admin/login": "not-found",
+  "/apply.cgi": "handler",
+  "/online_firmware_check.cgi": "handler",
+  "/log_first_page.cgi": "handler",
+  "/log_last_page.cgi": "handler",
+  "/log_next_page.cgi": "handler"
+ },
+ "handlers": 5,
+ "findings": [],
+ "evidence": {
+  "/admin/login": {
+   "verdict": "not-found",
+   "len": 248,
+   "status": "no-crash",
+   "snippet": "<HTML><HEAD><TITLE>404 Not Found</TITLE></HEAD>"
+  },
+  "/apply.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/online_firmware_check.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/log_first_page.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/log_last_page.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/log_next_page.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  }
+ },
+ "stats": {
+  "steps": 8,
+  "model_steps": 6,
+  "rule_steps": 0,
+  "fallback_steps": 2,
+  "model_share": 0.75,
+  "rejects": 2,
+  "reject_kinds": {
+   "重复探测": 1,
+   "缺参数": 1
+  },
+  "probed": 6,
+  "handlers": 5,
+  "anomalies": [],
+  "verdict_tried": 0,
+  "verdict_accepted": 0,
+  "verdict_accept_rate": null
+ }
+}

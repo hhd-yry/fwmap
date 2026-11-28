@@ -2,41 +2,41 @@
 
 这里放 `fwmap plan --json` 的**原始运行记录**，供 `lab/recount.py` 离线重算。
 
-> 当前状态：**15 份原始 JSON 全部缺失**。
-> 它们写在实验 VM 的 `/tmp` 下，VM 目前连不上（22 端口可建连但不返回 banner）。
-> 因此下面三组历史数字，在原件取回之前一律标注为
-> **「历史汇总，未逐轮核对」**，不得当作可重算的证据。
+> 当前状态：**15 份已归档**（`temp00/`、`temp07/`、`anon/` 各 5 份）。
+>
+> ⚠️ 来源说明：11-26 的首批原件随 VM 重启丢失（`/tmp` 已清空，全盘搜无果）。
+> 现在这 15 份是 **2026-11-28 用当日代码重跑**产出的。
+> 条件与结论和历史汇总一致，但**不是同一批文件** ——
+> 历史汇总值仍标「历史转述」，本文档的数字来自可核对的新原件。
+> 详见 `docs/验收-2026-11-28-C.md`。
 
-## 一、计划中的 15 轮
+## 一、15 轮清单
 
-| 组 | 条件 | 文件名 | 计划轮次 | 状态 |
-|---|---|---|---|---|
-| T0 | `--temperature 0`（贪心） | `temp00/run-1..5.json` | 5 | **缺失** |
-| T07 | `--temperature 0.7`（采样） | `temp07/rt-1..5.json` | 5 | **缺失** |
-| ANON | `--temperature 0.7 --anonymize` | `anon/ra-1..5.json` | 5 | **缺失** |
+| 组 | 条件 | 文件名 | 计划 | 有效 | 命中 |
+|---|---|---|---|---|---|
+| T0 | `--temperature 0`（贪心） | `temp00/temp00-1..5.json` | 5 | 5 | **5/5** |
+| T07 | `--temperature 0.7`（采样） | `temp07/temp07-1..5.json` | 5 | 5 | **5/5** |
+| ANON | `--temperature 0.7 --anonymize` | `anon/anon-1..5.json` | 5 | 5 | **0/5** |
 
-历史汇总值（出处：`docs/日志-2026-11-26.md`）：
+其他固定条件：DIR-615 C2 `sbin/httpd`、8 步预算、`--probe`、
+模型 Qwen2.5-Coder-1.5B（宿主机 GPU，经反向隧道给 VM 用）。
 
-| 组 | 历史记录 |
-|---|---|
-| T0 | 5/5 判出 `/login.cgi` = crash |
-| T07 | 5/5 判出 |
-| ANON | 0/5 判出 |
+每组每轮的实际 `status`（`no_progress` 表示无进展提前停，`budget_exhausted` 表示用满预算）
+都写在对应 JSON 里，写论文时要分开报，不能都算成"跑完了"。
 
-**这三行现在只能当"历史转述"引用，不能参与"命中/计划"的统计。**
-
-## 二、取回原件后怎么重算
+## 二、怎么重算
 
 ```bash
-# 1) 从 VM 拷回来（VM 恢复后）
-scp ubuntu@192.168.8.137:/tmp/run-*.json lab/recordings/temp00/
-scp ubuntu@192.168.8.137:/tmp/rt-*.json  lab/recordings/temp07/
-scp ubuntu@192.168.8.137:/tmp/ra-*.json  lab/recordings/anon/
-
-# 2) 逐组重算（每轮遍历全部结论，两个分母都出）
 python lab/recount.py lab/recordings/temp00 --target /login.cgi --kind crash --planned 5
 python lab/recount.py lab/recordings/temp07 --target /login.cgi --kind crash --planned 5
 python lab/recount.py lab/recordings/anon   --target /login.cgi --kind crash --planned 5
+```
+
+需要重新产生一批记录时（VM 上跑，约 50 分钟）：
+
+```bash
+bash lab/rerun3.sh          # 三组各 5 轮，写到 /tmp/rec/<组>/
+python lab/fetch_rec.py     # 取回 lab/recordings/
 ```
 
 ## 三、口径（写死，不允许临时改）

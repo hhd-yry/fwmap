@@ -526,15 +526,30 @@ def _execute(act: dict, state: dict, *, probe=None, log=print) -> dict:
         if not cites:
             return {"ok": False,
                     "detail": "没有引用任何实测记录，不能下结论"}
-        for text in cites:
-            if uri not in text:
-                return {"ok": False,
-                        "detail": f"引用「{text[:40]}」没提到 {uri}，"
-                                  "不算这条对象的证据"}
-            ln = d.get("len")
+
+        def _cite_problem(text: str, obj_uri: str) -> str:
+            """这条引用能不能对上 obj_uri 的实测记录。"""
+            d2 = ev_all.get(obj_uri) or {}
+            if obj_uri not in text:
+                return f"引用「{text[:40]}」没提到 {obj_uri}"
+            ln = d2.get("len")
             if ln not in (None, -1) and str(ln) not in text:
+                return f"引用「{text[:40]}」里的长度与实测 {ln}B 对不上"
+            return ""
+
+        # 至少要有一条能直接对上目标对象；**允许**额外引用对照组
+        # （"其他请求 1818B 正常 / 这条 0B" 才是完整的推理链）
+        primary = [c for c in cites if not _cite_problem(c, uri)]
+        if not primary:
+            return {"ok": False,
+                    "detail": f"没有一条引用能对上 {uri} 的实测记录"}
+        for text in cites:
+            if text in primary:
+                continue
+            # 附带的引用也必须真实存在，防止夹带编造的证据
+            if not any(u in text for u in ev_all):
                 return {"ok": False,
-                        "detail": f"引用「{text[:40]}」里的长度与实测 {ln}B 对不上"}
+                        "detail": f"引用「{text[:40]}」没有对应任何实测记录，像编的"}
         if kind == "crash" and d.get("len") != 0:
             return {"ok": False,
                     "detail": f"你说是 crash，但 {uri} 返回了 {d.get('len')} 字节"}
@@ -548,6 +563,7 @@ def _execute(act: dict, state: dict, *, probe=None, log=print) -> dict:
         finding = {"uri": uri, "kind": kind,
                    "why": str(args.get("why") or "")[:200],
                    "evidence": cites[:6],
+                   "primary_evidence": primary[0],
                    "citation_source": "model",
                    "support": "process-exit" if confirmed else "observed-only",
                    "measured": d}

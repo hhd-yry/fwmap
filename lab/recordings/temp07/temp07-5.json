@@ -1,0 +1,222 @@
+{
+ "trace": [
+  {
+   "step": 1,
+   "action": "pages",
+   "args": {},
+   "ok": true,
+   "detail": "104 个表单",
+   "source": "model",
+   "mode": "action",
+   "why": "扫描固件自带的网页表单，拿到浏览器真实提交的 URL 与字段"
+  },
+  {
+   "step": 2,
+   "action": "routes",
+   "args": {
+    "mechanism": "strings_goform"
+   },
+   "ok": false,
+   "detail": "0 个路径",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "pages 已经成功做过，换一个"
+  },
+  {
+   "step": 3,
+   "action": "probe",
+   "args": {
+    "uri": "/apply.cgi"
+   },
+   "ok": true,
+   "detail": "/apply.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "有名字像表单目标的，而且带参数"
+  },
+  {
+   "step": 4,
+   "action": "probe",
+   "args": {
+    "uri": "/login.cgi"
+   },
+   "ok": false,
+   "detail": "/login.cgi→unknown",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "有名字像表单目标的，且带了提交按钮"
+  },
+  {
+   "step": 5,
+   "action": "verdict",
+   "args": {
+    "uri": "/login.cgi",
+    "kind": "crash",
+    "why": "响应体为空，可能是由于服务器错误或配置问题。",
+    "evidence": [
+     "/login.cgi 0B unknown"
+    ]
+   },
+   "ok": true,
+   "detail": "结论已记录：/login.cgi = crash",
+   "source": "model",
+   "mode": "verdict",
+   "why": "响应体为空，可能是由于服务器错误或配置问题。"
+  },
+  {
+   "step": 6,
+   "action": "probe",
+   "args": {
+    "uri": "/online_firmware_check.cgi"
+   },
+   "ok": true,
+   "detail": "/online_firmware_check.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "没有名字像表单目标的，且带了参数"
+  },
+  {
+   "step": 7,
+   "action": "probe",
+   "args": {
+    "uri": "/save_log.cgi"
+   },
+   "ok": true,
+   "detail": "/save_log.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "该路径包含提交按钮和表单数据，符合'提交'入口的标准"
+  },
+  {
+   "step": 8,
+   "action": "probe",
+   "args": {
+    "uri": "/send_log_email.cgi"
+   },
+   "ok": true,
+   "detail": "/send_log_email.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "带有提交按钮和action属性，通常表示提交请求"
+  }
+ ],
+ "status": "budget_exhausted",
+ "stop_reason": "预算用尽（8 步）",
+ "pending": [],
+ "candidates": [
+  "/apply.cgi",
+  "/online_firmware_check.cgi",
+  "/log_first_page.cgi",
+  "/log_last_page.cgi",
+  "/log_next_page.cgi",
+  "/log_previous_page.cgi",
+  "/log_clear_page.cgi",
+  "/save_log.cgi",
+  "/send_log_email.cgi",
+  "/ping_response.cgi",
+  "/ping6_response.cgi",
+  "/restart.cgi",
+  "/dhcp_revoke.cgi",
+  "/login.cgi",
+  "/relogin_auth.cgi",
+  "/set_sta_enrollee_pin.cgi",
+  "/st_device.cgi",
+  "/dhcp_renew.cgi",
+  "/dhcp_release.cgi",
+  "/pppoe_00_connect.cgi",
+  "/pppoe_00_disconnect.cgi",
+  "/pptp_connect.cgi",
+  "/pptp_disconnect.cgi",
+  "/l2tp_connect.cgi",
+  "/l2tp_disconnect.cgi",
+  "/bigpond_connect.cgi",
+  "/bigpond_disconnect.cgi",
+  "/firmware_upgrade.cgi",
+  "/save_configuration.cgi",
+  "/upload_configuration.cgi",
+  "/restore_default.cgi",
+  "/reboot.cgi",
+  "/reset_ifconfig_packet_counter.cgi",
+  "/ipv6_pppoe_connect.cgi",
+  "/ipv6_pppoe_disconnect.cgi",
+  "/system_time.cgi"
+ ],
+ "probed": {
+  "/apply.cgi": "handler",
+  "/login.cgi": "unknown",
+  "/online_firmware_check.cgi": "handler",
+  "/save_log.cgi": "handler",
+  "/send_log_email.cgi": "handler"
+ },
+ "handlers": 4,
+ "findings": [
+  {
+   "uri": "/login.cgi",
+   "kind": "crash",
+   "why": "响应体为空，可能是由于服务器错误或配置问题。",
+   "evidence": [
+    "/login.cgi 0B unknown"
+   ],
+   "primary_evidence": "/login.cgi 0B unknown",
+   "citation_source": "model",
+   "support": "process-exit",
+   "measured": {
+    "verdict": "unknown",
+    "len": 0,
+    "status": "crash",
+    "snippet": ""
+   }
+  }
+ ],
+ "evidence": {
+  "/apply.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/login.cgi": {
+   "verdict": "unknown",
+   "len": 0,
+   "status": "crash",
+   "snippet": ""
+  },
+  "/online_firmware_check.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/save_log.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/send_log_email.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  }
+ },
+ "stats": {
+  "steps": 8,
+  "model_steps": 7,
+  "rule_steps": 0,
+  "fallback_steps": 1,
+  "model_share": 0.88,
+  "rejects": 1,
+  "reject_kinds": {
+   "重复动作": 1
+  },
+  "probed": 5,
+  "handlers": 4,
+  "anomalies": [
+   "/login.cgi"
+  ],
+  "verdict_tried": 1,
+  "verdict_accepted": 1,
+  "verdict_accept_rate": 1.0
+ }
+}

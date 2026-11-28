@@ -92,6 +92,26 @@ def case_empty_evidence_rejected() -> bool:
         f = (state.get("findings") or [{}])[0]
         ok &= check("证据强度被标成 observed-only（未确认进程退出）",
                     f.get("support") == "observed-only", f)
+
+    # 允许带对照组：这是真实推理链（"别的 1818B，这条 0B"），不该被拒
+    state2 = {"evidence": {"/x": {"verdict": "unknown", "len": 0, "status": None},
+                           "/y": {"verdict": "handler", "len": 1818, "status": 200}}}
+    r5 = loop._execute({"action": "verdict",
+                        "args": {"uri": "/x", "kind": "crash",
+                                 "evidence": ["/y 1818B handler",
+                                              "/x 0B unknown"]}}, state2)
+    ok &= check("带对照组的引用被接受", r5["ok"] is True, r5)
+    if r5["ok"]:
+        f2 = (state2.get("findings") or [{}])[0]
+        ok &= check("主引用指向目标对象",
+                    f2.get("primary_evidence") == "/x 0B unknown", f2)
+
+    # 但夹带一条编造的证据仍然要拒
+    r6 = loop._execute({"action": "verdict",
+                        "args": {"uri": "/x", "kind": "crash",
+                                 "evidence": ["/x 0B unknown",
+                                              "/ghost.cgi 0B"]}}, state2)
+    ok &= check("夹带编造证据仍被拒", r6["ok"] is False, r6)
     return ok
 
 

@@ -1,0 +1,222 @@
+{
+ "trace": [
+  {
+   "step": 1,
+   "action": "pages",
+   "args": {},
+   "ok": true,
+   "detail": "104 个表单",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 url（它只认 这个动作不收参数））"
+  },
+  {
+   "step": 2,
+   "action": "routes",
+   "args": {
+    "mechanism": "strings_goform"
+   },
+   "ok": false,
+   "detail": "0 个路径",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "pages 已经成功做过，换一个"
+  },
+  {
+   "step": 3,
+   "action": "probe",
+   "args": {
+    "uri": "/apply.cgi"
+   },
+   "ok": true,
+   "detail": "/apply.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "有名字像表单目标的"
+  },
+  {
+   "step": 4,
+   "action": "probe",
+   "args": {
+    "uri": "/save_log.cgi"
+   },
+   "ok": true,
+   "detail": "/save_log.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "该请求中包含 `html_response_message` 和 `html_response_return_page` 参数，通常是保存日志的操作"
+  },
+  {
+   "step": 5,
+   "action": "probe",
+   "args": {
+    "uri": "/login.cgi"
+   },
+   "ok": false,
+   "detail": "/login.cgi→unknown",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "登录页面可能需要用户输入用户名和密码进行认证。"
+  },
+  {
+   "step": 6,
+   "action": "verdict",
+   "args": {
+    "uri": "/login.cgi",
+    "kind": "crash",
+    "why": "服务直接没了",
+    "evidence": [
+     "/apply.cgi 1818B handler 首行:<html>",
+     "/save_log.cgi 1818B handler 首行:<html>"
+    ]
+   },
+   "ok": false,
+   "detail": "没有一条引用能对上 /login.cgi 的实测记录",
+   "source": "model",
+   "mode": "verdict",
+   "why": "服务直接没了"
+  },
+  {
+   "step": 7,
+   "action": "verdict",
+   "args": {
+    "uri": "/login.cgi",
+    "kind": "crash",
+    "why": "返回了 0 字节，可能是服务器崩溃或配置问题。",
+    "evidence": [
+     "/login.cgi 0B unknown"
+    ]
+   },
+   "ok": true,
+   "detail": "结论已记录：/login.cgi = crash",
+   "source": "model",
+   "mode": "verdict",
+   "why": "返回了 0 字节，可能是服务器崩溃或配置问题。"
+  },
+  {
+   "step": 8,
+   "action": "probe",
+   "args": {
+    "uri": "/st_device.cgi"
+   },
+   "ok": false,
+   "detail": "/st_device.cgi→not-found",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "无参数，符合没有“提交”标记的描述"
+  }
+ ],
+ "status": "budget_exhausted",
+ "stop_reason": "预算用尽（8 步）",
+ "pending": [],
+ "candidates": [
+  "/apply.cgi",
+  "/online_firmware_check.cgi",
+  "/log_first_page.cgi",
+  "/log_last_page.cgi",
+  "/log_next_page.cgi",
+  "/log_previous_page.cgi",
+  "/log_clear_page.cgi",
+  "/save_log.cgi",
+  "/send_log_email.cgi",
+  "/ping_response.cgi",
+  "/ping6_response.cgi",
+  "/restart.cgi",
+  "/dhcp_revoke.cgi",
+  "/login.cgi",
+  "/relogin_auth.cgi",
+  "/set_sta_enrollee_pin.cgi",
+  "/st_device.cgi",
+  "/dhcp_renew.cgi",
+  "/dhcp_release.cgi",
+  "/pppoe_00_connect.cgi",
+  "/pppoe_00_disconnect.cgi",
+  "/pptp_connect.cgi",
+  "/pptp_disconnect.cgi",
+  "/l2tp_connect.cgi",
+  "/l2tp_disconnect.cgi",
+  "/bigpond_connect.cgi",
+  "/bigpond_disconnect.cgi",
+  "/firmware_upgrade.cgi",
+  "/save_configuration.cgi",
+  "/upload_configuration.cgi",
+  "/restore_default.cgi",
+  "/reboot.cgi",
+  "/reset_ifconfig_packet_counter.cgi",
+  "/ipv6_pppoe_connect.cgi",
+  "/ipv6_pppoe_disconnect.cgi",
+  "/system_time.cgi"
+ ],
+ "probed": {
+  "/apply.cgi": "handler",
+  "/save_log.cgi": "handler",
+  "/login.cgi": "unknown",
+  "/st_device.cgi": "not-found"
+ },
+ "handlers": 2,
+ "findings": [
+  {
+   "uri": "/login.cgi",
+   "kind": "crash",
+   "why": "返回了 0 字节，可能是服务器崩溃或配置问题。",
+   "evidence": [
+    "/login.cgi 0B unknown"
+   ],
+   "primary_evidence": "/login.cgi 0B unknown",
+   "citation_source": "model",
+   "support": "process-exit",
+   "measured": {
+    "verdict": "unknown",
+    "len": 0,
+    "status": "crash",
+    "snippet": ""
+   }
+  }
+ ],
+ "evidence": {
+  "/apply.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/save_log.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/login.cgi": {
+   "verdict": "unknown",
+   "len": 0,
+   "status": "crash",
+   "snippet": ""
+  },
+  "/st_device.cgi": {
+   "verdict": "not-found",
+   "len": 248,
+   "status": "no-crash",
+   "snippet": "<HTML><HEAD><TITLE>404 Not Found</TITLE></HEAD>"
+  }
+ },
+ "stats": {
+  "steps": 8,
+  "model_steps": 6,
+  "rule_steps": 0,
+  "fallback_steps": 2,
+  "model_share": 0.75,
+  "rejects": 2,
+  "reject_kinds": {
+   "多余参数": 1,
+   "重复动作": 1
+  },
+  "probed": 4,
+  "handlers": 2,
+  "anomalies": [
+   "/login.cgi"
+  ],
+  "verdict_tried": 2,
+  "verdict_accepted": 1,
+  "verdict_accept_rate": 0.5
+ }
+}

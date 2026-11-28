@@ -1,0 +1,222 @@
+{
+ "trace": [
+  {
+   "step": 1,
+   "action": "pages",
+   "args": {},
+   "ok": true,
+   "detail": "104 个表单",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 uri（它只认 这个动作不收参数））"
+  },
+  {
+   "step": 2,
+   "action": "routes",
+   "args": {
+    "mechanism": "strings_goform"
+   },
+   "ok": false,
+   "detail": "0 个路径",
+   "source": "heuristic",
+   "mode": "action",
+   "why": "动作不合法（多余的参数 path（它只认 这个动作不收参数））"
+  },
+  {
+   "step": 3,
+   "action": "probe",
+   "args": {
+    "uri": "/apply.cgi"
+   },
+   "ok": true,
+   "detail": "/apply.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "有名字像表单目标的（apply）"
+  },
+  {
+   "step": 4,
+   "action": "probe",
+   "args": {
+    "uri": "/login.cgi"
+   },
+   "ok": false,
+   "detail": "/login.cgi→unknown",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "登录页面包含 submit_button 和 action 标签，可能是登录入口"
+  },
+  {
+   "step": 5,
+   "action": "verdict",
+   "args": {
+    "uri": "/login.cgi",
+    "kind": "crash",
+    "why": "响应体为空，可能是服务器内部错误或配置问题。",
+    "evidence": [
+     "/login.cgi 0B unknown"
+    ]
+   },
+   "ok": true,
+   "detail": "结论已记录：/login.cgi = crash",
+   "source": "model",
+   "mode": "verdict",
+   "why": "响应体为空，可能是服务器内部错误或配置问题。"
+  },
+  {
+   "step": 6,
+   "action": "probe",
+   "args": {
+    "uri": "/save_log.cgi"
+   },
+   "ok": true,
+   "detail": "/save_log.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "该条 uri 是一个保存日志的请求，通常用于提交用户输入。"
+  },
+  {
+   "step": 7,
+   "action": "probe",
+   "args": {
+    "uri": "/set_sta_enrollee_pin.cgi"
+   },
+   "ok": true,
+   "detail": "/set_sta_enrollee_pin.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "带参数且带有 'submit_button' 标记"
+  },
+  {
+   "step": 8,
+   "action": "probe",
+   "args": {
+    "uri": "/ping_response.cgi"
+   },
+   "ok": true,
+   "detail": "/ping_response.cgi→handler",
+   "source": "model",
+   "mode": "probe-select",
+   "why": "有 submit_button 和 action 标记，可能是真提交入口"
+  }
+ ],
+ "status": "budget_exhausted",
+ "stop_reason": "预算用尽（8 步）",
+ "pending": [],
+ "candidates": [
+  "/apply.cgi",
+  "/online_firmware_check.cgi",
+  "/log_first_page.cgi",
+  "/log_last_page.cgi",
+  "/log_next_page.cgi",
+  "/log_previous_page.cgi",
+  "/log_clear_page.cgi",
+  "/save_log.cgi",
+  "/send_log_email.cgi",
+  "/ping_response.cgi",
+  "/ping6_response.cgi",
+  "/restart.cgi",
+  "/dhcp_revoke.cgi",
+  "/login.cgi",
+  "/relogin_auth.cgi",
+  "/set_sta_enrollee_pin.cgi",
+  "/st_device.cgi",
+  "/dhcp_renew.cgi",
+  "/dhcp_release.cgi",
+  "/pppoe_00_connect.cgi",
+  "/pppoe_00_disconnect.cgi",
+  "/pptp_connect.cgi",
+  "/pptp_disconnect.cgi",
+  "/l2tp_connect.cgi",
+  "/l2tp_disconnect.cgi",
+  "/bigpond_connect.cgi",
+  "/bigpond_disconnect.cgi",
+  "/firmware_upgrade.cgi",
+  "/save_configuration.cgi",
+  "/upload_configuration.cgi",
+  "/restore_default.cgi",
+  "/reboot.cgi",
+  "/reset_ifconfig_packet_counter.cgi",
+  "/ipv6_pppoe_connect.cgi",
+  "/ipv6_pppoe_disconnect.cgi",
+  "/system_time.cgi"
+ ],
+ "probed": {
+  "/apply.cgi": "handler",
+  "/login.cgi": "unknown",
+  "/save_log.cgi": "handler",
+  "/set_sta_enrollee_pin.cgi": "handler",
+  "/ping_response.cgi": "handler"
+ },
+ "handlers": 4,
+ "findings": [
+  {
+   "uri": "/login.cgi",
+   "kind": "crash",
+   "why": "响应体为空，可能是服务器内部错误或配置问题。",
+   "evidence": [
+    "/login.cgi 0B unknown"
+   ],
+   "primary_evidence": "/login.cgi 0B unknown",
+   "citation_source": "model",
+   "support": "process-exit",
+   "measured": {
+    "verdict": "unknown",
+    "len": 0,
+    "status": "crash",
+    "snippet": ""
+   }
+  }
+ ],
+ "evidence": {
+  "/apply.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/login.cgi": {
+   "verdict": "unknown",
+   "len": 0,
+   "status": "crash",
+   "snippet": ""
+  },
+  "/save_log.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/set_sta_enrollee_pin.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  },
+  "/ping_response.cgi": {
+   "verdict": "handler",
+   "len": 1818,
+   "status": "no-crash",
+   "snippet": "<html>"
+  }
+ },
+ "stats": {
+  "steps": 8,
+  "model_steps": 6,
+  "rule_steps": 0,
+  "fallback_steps": 2,
+  "model_share": 0.75,
+  "rejects": 2,
+  "reject_kinds": {
+   "多余参数": 2
+  },
+  "probed": 5,
+  "handlers": 4,
+  "anomalies": [
+   "/login.cgi"
+  ],
+  "verdict_tried": 1,
+  "verdict_accepted": 1,
+  "verdict_accept_rate": 1.0
+ }
+}
