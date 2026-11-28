@@ -1,0 +1,197 @@
+{
+  "device": "cuda",
+  "budget": 4,
+  "rounds": [
+    {
+      "seed": 11,
+      "fixed": {
+        "order": [
+          "H",
+          "I",
+          "L",
+          "J",
+          "D",
+          "B",
+          "E",
+          "K",
+          "G",
+          "A",
+          "F",
+          "C"
+        ],
+        "first_review": 1,
+        "review_in_first_four": 3
+      },
+      "rules": {
+        "order": [
+          "H",
+          "L",
+          "K",
+          "I",
+          "J",
+          "D",
+          "B",
+          "E",
+          "G",
+          "A",
+          "F",
+          "C"
+        ],
+        "first_review": 1,
+        "review_in_first_four": 3
+      },
+      "model": {
+        "invalid_reply": "```json\n[\"D\", \"B\", \"E\", \"F\", \"C\", \"G\", \"H\", \"I\", \"J\", \"K\", \"L\"]\n```"
+      },
+      "model_strict_valid": false,
+      "model_seconds": 1.718
+    },
+    {
+      "seed": 23,
+      "fixed": {
+        "order": [
+          "E",
+          "B",
+          "A",
+          "L",
+          "G",
+          "D",
+          "I",
+          "C",
+          "K",
+          "F",
+          "J",
+          "H"
+        ],
+        "first_review": 2,
+        "review_in_first_four": 2
+      },
+      "rules": {
+        "order": [
+          "L",
+          "H",
+          "K",
+          "E",
+          "B",
+          "A",
+          "G",
+          "D",
+          "I",
+          "C",
+          "F",
+          "J"
+        ],
+        "first_review": 1,
+        "review_in_first_four": 2
+      },
+      "model": {
+        "invalid_reply": "```json\n[\"D\", \"J\", \"C\", \"I\", \"G\", \"B\", \"E\", \"F\", \"K\", \"L\"]\n```"
+      },
+      "model_strict_valid": false,
+      "model_seconds": 1.23
+    },
+    {
+      "seed": 37,
+      "fixed": {
+        "order": [
+          "K",
+          "J",
+          "B",
+          "I",
+          "A",
+          "F",
+          "C",
+          "D",
+          "H",
+          "G",
+          "L",
+          "E"
+        ],
+        "first_review": 3,
+        "review_in_first_four": 2
+      },
+      "rules": {
+        "order": [
+          "H",
+          "L",
+          "K",
+          "J",
+          "B",
+          "I",
+          "A",
+          "F",
+          "C",
+          "D",
+          "G",
+          "E"
+        ],
+        "first_review": 1,
+        "review_in_first_four": 2
+      },
+      "model": {
+        "invalid_reply": "```json\n[\"J\", \"B\", \"D\", \"H\", \"G\", \"L\", \"E\"]\n```"
+      },
+      "model_strict_valid": false,
+      "model_seconds": 0.949
+    },
+    {
+      "seed": 53,
+      "fixed": {
+        "order": [
+          "J",
+          "D",
+          "H",
+          "I",
+          "L",
+          "F",
+          "E",
+          "C",
+          "K",
+          "G",
+          "A",
+          "B"
+        ],
+        "first_review": 3,
+        "review_in_first_four": 2
+      },
+      "rules": {
+        "order": [
+          "H",
+          "L",
+          "K",
+          "J",
+          "D",
+          "I",
+          "F",
+          "E",
+          "C",
+          "G",
+          "A",
+          "B"
+        ],
+        "first_review": 1,
+        "review_in_first_four": 2
+      },
+      "model": {
+        "order": [
+          "J",
+          "D",
+          "H",
+          "I",
+          "L",
+          "F",
+          "E",
+          "C",
+          "K",
+          "G",
+          "A",
+          "B"
+        ],
+        "first_review": 3,
+        "review_in_first_four": 2
+      },
+      "model_strict_valid": false,
+      "model_seconds": 1.419
+    }
+  ]
+}
