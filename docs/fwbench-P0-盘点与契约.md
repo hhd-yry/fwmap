@@ -1,4 +1,4 @@
-# fwbench P0：盘点与契约
+﻿# fwbench P0：盘点与契约
 
 > **日期**：2026-11-28　**基线提交**：`3fa15af`（计划参照点，与当前 HEAD 一致）
 > **依据**：`fwmap-端到端交互能力评测工具实施计划.md`（2026-11-28）
@@ -92,7 +92,7 @@ fwmap plan ──► agent/loop.run ──► _decide ──► agent/llm.chat�
 |---|---|---|
 | `open_case` | ✅ 已实现 | 无（只给元信息） |
 | `dispatch` | ✅ 回放后端 | 换成调用 `toolbus.run` 的只读白名单 |
-| `run_subject` | ⚠️ 目前用策略替身 | 调 `agent/loop.run`，把 `trace` 映射成事件 |
+| `run_subject` | ✅ 已实现 `fwmap-agent`：直接调 `loop._decide`，动作映射到只读后端 | 见 `docs/fwbench-P2-生产入口与归档回归.md` |
 | `score` | ✅ 已实现 | 无 |
 
 **替身必须标 `harness-only`**：当前 `rule` / `scripted` 两个策略都不是
@@ -115,7 +115,7 @@ fwmap 的生产决策入口，所以现在的分数只证明评测器可用，**
 
 ## 七、下一步（P1 收尾 → P2）
 
-1. 实现 `run_subject` 适配 `agent/loop.run`，把 `trace[].source` 映射成 `proposed_by`；
+1. ~~实现 `run_subject`~~ —— 已实现（`fwmap-agent`，调 `loop._decide`，事件带 `proposed_by`），见 P2 文档；
 2. 合并计划第 7 节的五条回归（离线复算 / 百分比 / 证据强度 / 分母 / 独立金标）——
    其中前三项目前只覆盖了"证据强度"和"分母"两类的评测器侧，
    历史归档复算要等 `lab/recordings/` 接入；

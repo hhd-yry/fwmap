@@ -1,4 +1,4 @@
-﻿"""fwbench 自身的测试：验证评测器，不是验证 fwmap。
+"""fwbench 自身的测试：验证评测器，不是验证 fwmap。
 
 对应实施计划第 7 节的验收点：
   · 用例校验能挡住"答案写进 id"
@@ -191,6 +191,74 @@ def main() -> int:
     ok &= check("内核在无 fwmap 环境可独立运行",
                 "OK" in (proc.stdout or ""),
                 (proc.stdout or "") + (proc.stderr or "")[-200:])
+
+    # 15) 第 7 节 #1：归档复算（三组 5/5、5/5、0/5）
+    from fwbench import archive as A
+    REC = os.path.join(ROOT, "lab", "recordings")
+    arc = A.summarize_groups(REC, "/login.cgi", "crash", planned=5)
+    hits = {k: v["hit"] for k, v in arc["groups"].items()}
+    ok &= check("归档复算 5/5、5/5、0/5",
+                hits == {"temp00": 5, "temp07": 5, "anon": 0}, hits)
+
+    # 16) 第 7 节 #2：百分比（内部 0.75，展示 75%）
+    g0 = arc["groups"]["temp00"]["model"]
+    ok &= check("temp00 模型参与率内部为 0.75",
+                abs(g0["share"] - 0.75) < 1e-9 and g0["steps"] == 40, g0)
+    md_arc = A.render_markdown(arc)
+    ok &= check("报告文字显示 75%", "75%" in md_arc)
+    synth = [{"trace": [{"source": "model"}] * 2 + [{"source": "heuristic"}] * 6}]
+    ok &= check("合成 2/8 显示 25%",
+                abs(A.model_share(synth)["share"] - 0.25) < 1e-9)
+
+    # 17) 第 7 节 #3：证据强度转述（文字由计数决定，不写死）
+    sup = arc["groups"]["temp00"]["support"]
+    ok &= check("具名归档命中记录是 process-exit",
+                sup["process-exit"] == 5 and sup["observed-only"] == 0, sup)
+    ok &= check("渲染文字与计数一致", "进程退出已确认" in md_arc)
+    obs_only = {"process-exit": 0, "observed-only": 5, "missing": 0,
+                "no_finding": 0}
+    ok &= check("只有观察时文字不同",
+                A._strength_text(obs_only) == "仅观测到空响应，进程状态未确认",
+                A._strength_text(obs_only))
+
+    # 18) 第 7 节 #4：分母（2 命中含第二位、1 未命中、1 损坏、1 缺失）
+    d = os.path.join(tmp, "denom")
+    os.makedirs(d, exist_ok=True)
+    json.dump({"findings": [{"uri": "/login.cgi", "kind": "crash"}]},
+              open(os.path.join(d, "a.json"), "w", encoding="utf-8"))
+    json.dump({"findings": [{"uri": "/apply.cgi", "kind": "normal"},
+                            {"uri": "/login.cgi", "kind": "crash"}]},
+              open(os.path.join(d, "b.json"), "w", encoding="utf-8"))
+    json.dump({"findings": [{"uri": "/login.cgi", "kind": "suspicious"}]},
+              open(os.path.join(d, "c.json"), "w", encoding="utf-8"))
+    open(os.path.join(d, "d.json"), "w", encoding="utf-8").write("{坏的")
+    rc = A.recount(A.load_group(d), "/login.cgi", "crash", planned=5)
+    ok &= check("命中在第二位也计入", rc["hit"] == 2, rc)
+    ok &= check("损坏与缺失分别计数",
+                rc["corrupt"] == 1 and rc["missing"] == 1, rc)
+    ok &= check("两个分母 2/3 与 2/5",
+                rc["valid"] == 3 and rc["rate_of_planned"] == 0.4, rc)
+
+    # 19) 第 7 节 #6：--resume 只补缺的那一轮
+    rdir = os.path.join(tmp, "resume")
+    R.run_suite(SUITE, FIX, PROF_RULE, rdir)
+    shutil.rmtree(os.path.join(rdir, "cases", "c018"))
+    res2 = R.run_suite(SUITE, FIX, PROF_RULE, rdir, resume=True)
+    ok &= check("resume 只补缺的用例",
+                [r["case_id"] for r in res2["rows"]] == ["c018"], res2["rows"])
+    ok &= check("已有成功轮次没被覆盖",
+                os.path.exists(os.path.join(rdir, "cases", "c017",
+                                            "submission.json")))
+
+    # 20) 生产决策入口：fwmap 自己的 _decide 跑 C 层
+    adir = os.path.join(tmp, "agent")
+    R.run_suite(SUITE, FIX, PROF_RULE, adir, subject="fwmap-agent")
+    sa = S.score_run(adir, oracle)
+    ok &= check("生产决策循环跑通双例", sa["metrics"]["passed"] == 2, sa["metrics"])
+    evs = [json.loads(line) for line in open(
+        os.path.join(adir, "cases", "c017", "events.jsonl"), encoding="utf-8")]
+    ok &= check("事件记录决策来源",
+                any(e.get("proposed_by") == "heuristic" for e in evs), evs[:2])
 
     shutil.rmtree(tmp, ignore_errors=True)
     print()

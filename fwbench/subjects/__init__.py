@@ -1,4 +1,4 @@
-"""被测工具适配器（subject）。
+﻿"""被测工具适配器（subject）。
 
 契约（实施计划第 9 节）：
 * 每个适配器声明 **工具 ID、版本、支持的任务、所需输入、可观察输出**；
@@ -23,6 +23,7 @@ class SubjectBase:
     version = "0"
     capability = "elf-meta"
     requires = ""
+    supports_interactive = False
 
     @classmethod
     def available(cls) -> tuple[bool, str]:
@@ -40,11 +41,12 @@ class SubjectBase:
 
 
 def _load():
-    from . import elftools_elf, fwmap_elf, stdlib_elf
+    from . import elftools_elf, fwmap_agent, fwmap_elf, stdlib_elf
 
     return {c.subject_id: c for c in (fwmap_elf.FwmapELF,
                                       stdlib_elf.StdlibELF,
-                                      elftools_elf.ElftoolsELF)}
+                                      elftools_elf.ElftoolsELF,
+                                      fwmap_agent.FwmapAgentSubject)}
 
 
 REGISTRY = _load()

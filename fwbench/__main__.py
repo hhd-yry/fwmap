@@ -1,4 +1,4 @@
-﻿"""fwbench 命令入口。
+"""fwbench 命令入口。
 
     python -m fwbench validate --suite bench/suites/smoke.json
     python -m fwbench run --suite ... --profile bench/profiles/rule.json --out runs/smoke-rule
@@ -148,6 +148,32 @@ def cmd_compare(args) -> int:
     return 0 if not mismatch else 2
 
 
+def cmd_archive(args) -> int:
+    from . import archive as archive_mod
+
+    res = archive_mod.summarize_groups(args.dir, args.target, args.kind,
+                                       args.planned)
+    text = archive_mod.render_markdown(res)
+    print(text)
+    if args.json:
+        with open(args.json, "w", encoding="utf-8") as fh:
+            json.dump(res, fh, ensure_ascii=False, indent=1)
+        print(f"\n已写出：{args.json}")
+    if args.expect:
+        want = [int(x) for x in args.expect.split(",")]
+        names = ["temp00", "temp07", "anon"]
+        bad = []
+        for name, w in zip(names, want):
+            row = res["groups"].get(name) or {}
+            if row.get("hit") != w:
+                bad.append(f"{name} 期望 {w} 实际 {row.get('hit')}")
+        if bad:
+            print("[!] 与期望不符：" + "；".join(bad))
+            return 3
+        print(f"[+] 与期望一致：{args.expect}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="fwbench", description="fwmap 端到端交互能力评测")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -186,6 +212,15 @@ def main(argv=None) -> int:
     cp.add_argument("run_dirs", nargs="+")
     cp.add_argument("--out", required=True)
     cp.set_defaults(func=cmd_compare)
+
+    ar = sub.add_parser("archive", help="归档复算（第 7 节 #1-#4）")
+    ar.add_argument("dir", nargs="?", default=os.path.join(ROOT, "lab", "recordings"))
+    ar.add_argument("--target", default="/login.cgi")
+    ar.add_argument("--kind", default="crash")
+    ar.add_argument("--planned", type=int, default=5)
+    ar.add_argument("--expect", help="三组期望命中数，逗号分隔，如 5,5,0")
+    ar.add_argument("--json")
+    ar.set_defaults(func=cmd_archive)
 
     args = ap.parse_args(argv)
     return args.func(args)

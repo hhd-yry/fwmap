@@ -140,6 +140,36 @@ def _run_lookup(case: Case, fixtures_dir: str, subject, out_dir: str) -> dict:
             "served": [], "submission": sub}
 
 
+def _run_interactive_subject(case: Case, fixtures_dir: str, subject,
+                             profile: dict, out_dir: str) -> dict:
+    """C 层：由被测工具自己的决策循环跑一遍，事件原样落盘。"""
+    limits = dict(DEFAULT_LIMITS)
+    limits.update(case.limits or {})
+    limits.update(profile.get("limits") or {})
+    records = load_fixture(fixtures_dir, case.fixture_ref)
+    backend = _make_backend(records, seed=0)
+
+    run_id = f"{case.case_id}-{subject.subject_id}"
+    out = subject.run_interactive(case, backend, limits, chat=None)
+
+    log = EventLog(os.path.join(out_dir, "events.jsonl"), run_id=run_id,
+                   case_id=case.case_id, repeat=1)
+    for i, ev in enumerate(out["events"], 1):
+        log.decision = i
+        etype = ev.pop("type")
+        log.emit(etype, **ev)
+    log.close()
+    sub = out["submission"]
+    with open(os.path.join(out_dir, "submission.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump(sub, fh, ensure_ascii=False, indent=1)
+    return {"case_id": case.case_id, "family": case.family,
+            "pair_id": case.pair_id, "run_id": run_id, "repeat": 1,
+            "policy": subject.subject_id, "stop_reason": out["stop_reason"],
+            "decisions": out["decisions"], "tool_calls_used": out["tool_calls"],
+            "served": sorted(backend.served), "submission": sub}
+
+
 def run_suite(suite_path: str, fixtures_dir: str, profile_path: str,
               out_dir: str, seed: int = 0, resume: bool = False,
               subject: str | None = None) -> dict:
@@ -172,6 +202,17 @@ def run_suite(suite_path: str, fixtures_dir: str, profile_path: str,
 
     rows = []
     for case in cases:
+        if (getattr(subject_obj, "supports_interactive", False)
+                and not case.is_lookup):
+            case_dir = os.path.join(out_dir, "cases", case.case_id)
+            if resume and os.path.exists(os.path.join(case_dir, "submission.json")):
+                continue
+            if os.path.isdir(case_dir):
+                shutil.rmtree(case_dir)
+            os.makedirs(case_dir, exist_ok=True)
+            rows.append(_run_interactive_subject(case, fixtures_dir, subject_obj,
+                                                 profile, case_dir))
+            continue
         if case.is_lookup and subject_obj is not None:
             case_dir = os.path.join(out_dir, "cases", case.case_id)
             if resume and os.path.exists(os.path.join(case_dir, "submission.json")):
