@@ -266,13 +266,14 @@ def main() -> int:
 
 
     # 21) P3：冻结基线在两套里都要全过（H）
-    for name, planned in (("dev", 6), ("holdout", 4)):
+    # dev 现在 8 例：基线 H 在"时间错位"那题会错，所以期望 7 而不是 8。
+    for name, planned in (("dev", 7), ("holdout", 4)):
         sdir = os.path.join(tmp, f"h-{name}")
         R.run_suite(os.path.join(BENCH, "suites", f"{name}.json"), FIX,
                     PROF_RULE, sdir)
         sm = S.score_run(sdir, C.load_oracle(
             os.path.join(BENCH, "oracle", f"{name}.json")))
-        ok &= check(f"基线 H 在 {name} 全过（{planned} 例）",
+        ok &= check(f"基线 H 在 {name} 达到期望（{planned} 例）",
                     sm["metrics"]["passed"] == planned, sm["metrics"])
 
     # 22) --only 只跑指定用例
