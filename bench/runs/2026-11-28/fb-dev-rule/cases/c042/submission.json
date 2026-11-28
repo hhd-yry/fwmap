@@ -1,0 +1,9 @@
+{
+ "outcome": "answered",
+ "claim": "stale",
+ "subject": "run-12",
+ "sample_time": "10:00:10",
+ "citations": [
+  "e2"
+ ]
+}

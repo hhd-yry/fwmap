@@ -1,0 +1,27 @@
+{
+ "schema_version": 1,
+ "bench_version": "0.1.0",
+ "suite": "elfmeta.json",
+ "suite_digest": "f8d0c729dd926d34",
+ "profile": {
+  "name": "rule",
+  "policy": "rule",
+  "repeats": 1,
+  "limits": {
+   "decisions": 6,
+   "tool_calls": 4
+  },
+  "note": "R：冻结的规则表 —— 优先读 process_sample，再照它作答。规则表只在开发集上写一次。"
+ },
+ "seed": 0,
+ "cases": 3,
+ "subject": {
+  "subject_id": "elftools",
+  "version": "0",
+  "capability": "elf-meta",
+  "available": false,
+  "unavailable_reason": "未安装 pyelftools",
+  "requires": "pyelftools"
+ },
+ "notes": "run 落盘成功只表示评测器完成了工作，允许其中存在失败任务"
+}

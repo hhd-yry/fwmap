@@ -1,0 +1,12 @@
+{
+ "outcome": "answered",
+ "fields": {
+  "bits": 32,
+  "endian": "big",
+  "etype": "exec",
+  "machine_id": "mips"
+ },
+ "error": null,
+ "subject": "stdlib",
+ "subject_version": "1"
+}

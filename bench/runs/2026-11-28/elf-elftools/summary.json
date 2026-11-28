@@ -1,0 +1,97 @@
+{
+ "run_dir": "C:\\deepseek\\tmp\\elf-elftools",
+ "results": [
+  {
+   "case_id": "c201",
+   "family": "elfmeta",
+   "pair_id": "",
+   "outcome": "not_run",
+   "claim": {},
+   "expected": {
+    "bits": 32,
+    "endian": "big",
+    "etype": "exec",
+    "machine_id": "mips"
+   },
+   "citations": [],
+   "served": [],
+   "detail": [],
+   "passed": false,
+   "failure": "not_run",
+   "applicable": false
+  },
+  {
+   "case_id": "c202",
+   "family": "elfmeta",
+   "pair_id": "",
+   "outcome": "not_run",
+   "claim": {},
+   "expected": {
+    "bits": 32,
+    "endian": "little",
+    "etype": "dyn",
+    "machine_id": "arm"
+   },
+   "citations": [],
+   "served": [],
+   "detail": [],
+   "passed": false,
+   "failure": "not_run",
+   "applicable": false
+  },
+  {
+   "case_id": "c203",
+   "family": "elfmeta",
+   "pair_id": "",
+   "outcome": "not_run",
+   "claim": {},
+   "expected": "truncated",
+   "citations": [],
+   "served": [],
+   "detail": [],
+   "passed": false,
+   "failure": "not_run",
+   "applicable": false
+  }
+ ],
+ "metrics": {
+  "cases": 3,
+  "applicable": 0,
+  "not_run": 3,
+  "passed": 0,
+  "pass_rate": null,
+  "answered": 0,
+  "ungrounded_answered": 0,
+  "ungrounded_rate": null,
+  "pairs": 0,
+  "pairs_both_passed": 0,
+  "pair_rate": null
+ },
+ "manifest": {
+  "schema_version": 1,
+  "bench_version": "0.1.0",
+  "suite": "elfmeta.json",
+  "suite_digest": "f8d0c729dd926d34",
+  "profile": {
+   "name": "rule",
+   "policy": "rule",
+   "repeats": 1,
+   "limits": {
+    "decisions": 6,
+    "tool_calls": 4
+   },
+   "note": "R：冻结的规则表 —— 优先读 process_sample，再照它作答。规则表只在开发集上写一次。"
+  },
+  "seed": 0,
+  "cases": 3,
+  "subject": {
+   "subject_id": "elftools",
+   "version": "0",
+   "capability": "elf-meta",
+   "available": false,
+   "unavailable_reason": "未安装 pyelftools",
+   "requires": "pyelftools"
+  },
+  "notes": "run 落盘成功只表示评测器完成了工作，允许其中存在失败任务"
+ }
+}

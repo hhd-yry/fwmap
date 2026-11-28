@@ -1,0 +1,110 @@
+{
+ "run_dir": "C:\\deepseek\\tmp\\fb-holdout-rule",
+ "results": [
+  {
+   "case_id": "c051",
+   "family": "version",
+   "pair_id": "p33",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "v2.5.12",
+   "expected": "v2.5.12",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e2"
+   ]
+  },
+  {
+   "case_id": "c052",
+   "family": "version",
+   "pair_id": "p33",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "v3.03",
+   "expected": "v3.03",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e2"
+   ]
+  },
+  {
+   "case_id": "c061",
+   "family": "availability",
+   "pair_id": "p34",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "present",
+   "expected": "present",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e2"
+   ]
+  },
+  {
+   "case_id": "c062",
+   "family": "availability",
+   "pair_id": "p34",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "missing",
+   "expected": "missing",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e2"
+   ]
+  }
+ ],
+ "metrics": {
+  "cases": 4,
+  "applicable": 4,
+  "not_run": 0,
+  "passed": 4,
+  "pass_rate": 1.0,
+  "answered": 4,
+  "ungrounded_answered": 0,
+  "ungrounded_rate": 0.0,
+  "pairs": 2,
+  "pairs_both_passed": 2,
+  "pair_rate": 1.0
+ },
+ "manifest": {
+  "schema_version": 1,
+  "bench_version": "0.1.0",
+  "suite": "holdout.json",
+  "suite_digest": "3736a55262c8f3b3",
+  "profile": {
+   "name": "rule",
+   "policy": "rule",
+   "repeats": 1,
+   "limits": {
+    "decisions": 6,
+    "tool_calls": 4
+   },
+   "note": "R：冻结的规则表 —— 优先读 process_sample，再照它作答。规则表只在开发集上写一次。"
+  },
+  "seed": 0,
+  "cases": 4,
+  "subject": null,
+  "notes": "run 落盘成功只表示评测器完成了工作，允许其中存在失败任务"
+ }
+}

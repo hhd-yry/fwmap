@@ -1,0 +1,80 @@
+{
+ "run_dir": "C:\\deepseek\\tmp\\elf-stdlib",
+ "results": [
+  {
+   "case_id": "c201",
+   "family": "elfmeta",
+   "pair_id": "",
+   "outcome": "answered",
+   "claim": {
+    "bits": 32,
+    "endian": "big",
+    "etype": "exec",
+    "machine_id": "mips"
+   },
+   "expected": {
+    "bits": 32,
+    "endian": "big",
+    "etype": "exec",
+    "machine_id": "mips"
+   },
+   "citations": [],
+   "served": [],
+   "detail": [],
+   "passed": true,
+   "applicable": true,
+   "failure": null
+  },
+  {
+   "case_id": "c202",
+   "family": "elfmeta",
+   "pair_id": "",
+   "outcome": "answered",
+   "claim": {
+    "bits": 32,
+    "endian": "little",
+    "etype": "dyn",
+    "machine_id": "arm"
+   },
+   "expected": {
+    "bits": 32,
+    "endian": "little",
+    "etype": "dyn",
+    "machine_id": "arm"
+   },
+   "citations": [],
+   "served": [],
+   "detail": [],
+   "passed": true,
+   "applicable": true,
+   "failure": null
+  },
+  {
+   "case_id": "c203",
+   "family": "elfmeta",
+   "pair_id": "",
+   "outcome": "truncated",
+   "claim": {},
+   "expected": "truncated",
+   "citations": [],
+   "served": [],
+   "detail": [],
+   "passed": true,
+   "applicable": true,
+   "failure": null
+  }
+ ],
+ "metrics": {
+  "cases": 3,
+  "applicable": 3,
+  "not_run": 0,
+  "passed": 3,
+  "pass_rate": 1.0,
+  "answered": 2,
+  "ungrounded_answered": 0,
+  "ungrounded_rate": 0.0,
+  "pairs": 0,
+  "pairs_both_passed": 0,
+  "pair_rate": null
+ }
+}

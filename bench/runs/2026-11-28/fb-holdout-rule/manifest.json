@@ -1,0 +1,20 @@
+{
+ "schema_version": 1,
+ "bench_version": "0.1.0",
+ "suite": "holdout.json",
+ "suite_digest": "3736a55262c8f3b3",
+ "profile": {
+  "name": "rule",
+  "policy": "rule",
+  "repeats": 1,
+  "limits": {
+   "decisions": 6,
+   "tool_calls": 4
+  },
+  "note": "R：冻结的规则表 —— 优先读 process_sample，再照它作答。规则表只在开发集上写一次。"
+ },
+ "seed": 0,
+ "cases": 4,
+ "subject": null,
+ "notes": "run 落盘成功只表示评测器完成了工作，允许其中存在失败任务"
+}

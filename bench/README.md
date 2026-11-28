@@ -1,4 +1,4 @@
-﻿# fwbench —— fwmap 的端到端交互能力评测器
+# fwbench —— fwmap 的端到端交互能力评测器
 
 回答问题：**fwmap 的模块能否产出正确结果？模块组合后证据能否传到报告？
 允许模型参与决策，哪些任务更好、哪些更差、代价多少？**
@@ -145,10 +145,23 @@ python -m fwbench archive lab/recordings --expect 5,5,0
 3. 在 `bench/oracle/*.json` 写金标：`expected` + `acceptable_evidence_sets`；
 4. 配对用例必须同家族、同 `pair_id`，且**只改一条记录**。
 
+## 首轮验收（P4）
+
+验收报告：`docs/fwbench-P4-首轮验收.md`。归档运行目录在 `bench/runs/2026-11-28/`，
+**只带走仓库就能重算**：
+
+```bash
+python -m fwbench report bench/runs/2026-11-28/fb-dev-rule --oracle bench/oracle/dev.json
+python -m fwbench archive lab/recordings --expect 5,5,0
+```
+
+**结论边界**：H / S / M 在开发集上都是满分 —— 当前用例**区分不出策略**，
+只区分得出实现缺陷（截断 ELF 那次）。别把 3/3 说成"模型有用"或"工具很强"。
+
 ## 当前覆盖边界（别当成结论）
 
-- **C 层**实测的是 `rule` 与 `scripted` 两个策略 —— **都不是 fwmap 的生产决策入口**。
-  要接 `fwmap/agent/loop.py` 需按计划实现 `run_subject` 适配器，
+- **C 层**已接生产决策入口（`fwmap-agent` → `loop._decide`），但只用规则分支；
+  M 组只跑了 lifecycle 一对。
   未接通前结果应标 `harness-only`。
 - 未接入真实模型（`M` 组）、未做基线 `H`、未做信息消融。
 - 只覆盖「运行状态」一个家族，其余五个家族（制品完整性、版本识别、

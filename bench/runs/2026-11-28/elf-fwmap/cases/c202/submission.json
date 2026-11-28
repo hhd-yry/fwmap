@@ -1,0 +1,12 @@
+{
+ "outcome": "answered",
+ "fields": {
+  "bits": 32,
+  "endian": "little",
+  "etype": "dyn",
+  "machine_id": "arm"
+ },
+ "error": null,
+ "subject": "fwmap",
+ "subject_version": "0.1.0"
+}

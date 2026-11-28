@@ -1,0 +1,87 @@
+{
+ "run_dir": "C:\\deepseek\\tmp\\fb-m",
+ "results": [
+  {
+   "case_id": "c017",
+   "family": "lifecycle",
+   "pair_id": "p03",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "exited",
+   "expected": "exited",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e1",
+    "e2",
+    "e3"
+   ]
+  },
+  {
+   "case_id": "c018",
+   "family": "lifecycle",
+   "pair_id": "p03",
+   "applicable": true,
+   "passed": true,
+   "failure": null,
+   "detail": [],
+   "outcome": "answered",
+   "claim": "running",
+   "expected": "running",
+   "citations": [
+    "e2"
+   ],
+   "served": [
+    "e1",
+    "e2",
+    "e3"
+   ]
+  }
+ ],
+ "metrics": {
+  "cases": 2,
+  "applicable": 2,
+  "not_run": 0,
+  "passed": 2,
+  "pass_rate": 1.0,
+  "answered": 2,
+  "ungrounded_answered": 0,
+  "ungrounded_rate": 0.0,
+  "pairs": 1,
+  "pairs_both_passed": 1,
+  "pair_rate": 1.0
+ },
+ "manifest": {
+  "schema_version": 1,
+  "bench_version": "0.1.0",
+  "suite": "dev.json",
+  "suite_digest": "7ec64c23110a2644",
+  "profile": {
+   "name": "model",
+   "policy": "model",
+   "chat": "local",
+   "temperature": 0.0,
+   "repeats": 1,
+   "limits": {
+    "decisions": 6,
+    "tool_calls": 4
+   },
+   "note": "M：fwmap-agent + 本项目模型客户端（fwmap.agent.llm）。模型可提议，规则可兜底；每步记录 proposed_by。"
+  },
+  "seed": 0,
+  "cases": 2,
+  "subject": {
+   "subject_id": "fwmap-agent",
+   "version": "0.1.0",
+   "capability": "record-triage",
+   "available": true,
+   "unavailable_reason": "",
+   "requires": "fwmap（本仓库）"
+  },
+  "notes": "run 落盘成功只表示评测器完成了工作，允许其中存在失败任务"
+ }
+}

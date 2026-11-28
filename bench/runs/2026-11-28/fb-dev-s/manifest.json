@@ -1,0 +1,20 @@
+{
+ "schema_version": 1,
+ "bench_version": "0.1.0",
+ "suite": "dev.json",
+ "suite_digest": "3dc4747aec23ffa9",
+ "profile": {
+  "name": "scripted",
+  "policy": "scripted",
+  "repeats": 1,
+  "limits": {
+   "decisions": 6,
+   "tool_calls": 4
+  },
+  "note": "S：固定序列读 e1、e2 后作答。仅用于冒烟测试管线与评分，不代表任何能力。"
+ },
+ "seed": 0,
+ "cases": 6,
+ "subject": null,
+ "notes": "run 落盘成功只表示评测器完成了工作，允许其中存在失败任务"
+}
