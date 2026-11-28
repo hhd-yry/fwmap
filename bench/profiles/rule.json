@@ -1,0 +1,7 @@
+{
+ "name": "rule",
+ "policy": "rule",
+ "repeats": 1,
+ "limits": {"decisions": 6, "tool_calls": 4},
+ "note": "R：冻结的规则表 —— 优先读 process_sample，再照它作答。规则表只在开发集上写一次。"
+}

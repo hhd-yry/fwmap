@@ -1,0 +1,33 @@
+{
+ "schema_version": 1,
+ "name": "smoke",
+ "description": "首版垂直切片：运行状态家族的配对双例（A/B 只差一条记录的状态）",
+ "cases": [
+  {
+   "case_id": "c017",
+   "family": "lifecycle",
+   "pair_id": "p03",
+   "task": "根据归档材料，判断实例 svc-17 在 10:00:10 采样时的进程状态；给出支持判断的记录编号。",
+   "catalog": [
+    {"id": "e1", "type": "service_log"},
+    {"id": "e2", "type": "process_sample"},
+    {"id": "e3", "type": "process_sample"}
+   ],
+   "fixture_ref": "f017",
+   "limits": {"decisions": 6, "tool_calls": 4}
+  },
+  {
+   "case_id": "c018",
+   "family": "lifecycle",
+   "pair_id": "p03",
+   "task": "根据归档材料，判断实例 svc-17 在 10:00:10 采样时的进程状态；给出支持判断的记录编号。",
+   "catalog": [
+    {"id": "e1", "type": "service_log"},
+    {"id": "e2", "type": "process_sample"},
+    {"id": "e3", "type": "process_sample"}
+   ],
+   "fixture_ref": "f018",
+   "limits": {"decisions": 6, "tool_calls": 4}
+  }
+ ]
+}

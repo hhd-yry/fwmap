@@ -1,0 +1,28 @@
+{
+ "schema_version": 1,
+ "note": "金标只在评分阶段加载；运行器拿不到这个文件。provisional=true 表示尚未人工复核，只进开发集。",
+ "cases": [
+  {
+   "case_id": "c017",
+   "family": "lifecycle",
+   "pair_id": "p03",
+   "expected": "exited",
+   "acceptable_evidence_sets": [["e2"]],
+   "subject": "svc-17",
+   "sample_time": "10:00:10",
+   "allow_abstain": false,
+   "provisional": true
+  },
+  {
+   "case_id": "c018",
+   "family": "lifecycle",
+   "pair_id": "p03",
+   "expected": "running",
+   "acceptable_evidence_sets": [["e2"]],
+   "subject": "svc-17",
+   "sample_time": "10:00:10",
+   "allow_abstain": false,
+   "provisional": true
+  }
+ ]
+}

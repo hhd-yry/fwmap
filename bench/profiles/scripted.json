@@ -1,0 +1,7 @@
+{
+ "name": "scripted",
+ "policy": "scripted",
+ "repeats": 1,
+ "limits": {"decisions": 6, "tool_calls": 4},
+ "note": "S：固定序列读 e1、e2 后作答。仅用于冒烟测试管线与评分，不代表任何能力。"
+}
